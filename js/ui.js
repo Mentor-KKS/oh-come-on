@@ -20,11 +20,7 @@ function drawMenu(frameCount, highestUnlocked) {
     if (blink) {
         ctx.fillStyle = '#aaa';
         ctx.font = '20px "Courier New", monospace';
-        if (highestUnlocked > 0) {
-            ctx.fillText('Press SPACE for Level Select', W / 2, 300);
-        } else {
-            ctx.fillText('Press SPACE to play', W / 2, 300);
-        }
+        ctx.fillText('Press SPACE to play', W / 2, 300);
     }
 
     ctx.fillStyle = '#555';

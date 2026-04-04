@@ -48,6 +48,7 @@ const game = {
         this.deaths = 0;
         this.titleTimer = CFG.levelTitleTime;
         this.state = 'playing';
+        if (!SFX.bgPlaying) SFX.startMusic();
         // Camera direkt auf Spieler setzen (cameraMinX = versteckt Bereich links)
         const lvlW = lvl.width || W;
         const camMin = lvl.cameraMinX || 0;
@@ -108,12 +109,7 @@ const game = {
         if (this.state === 'menu') {
             if (isJump() || keys['Enter']) {
                 SFX.menuSelect();
-                if (this.highestUnlocked > 0) {
-                    this.state = 'levelSelect';
-                    this.selectedLevel = 0;
-                } else {
-                    this.startLevel(0);
-                }
+                this.startLevel(0);
             }
             return;
         }
