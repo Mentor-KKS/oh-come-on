@@ -90,6 +90,12 @@ const game = {
         this.frameCount++;
         if (this.navCooldown > 0) this.navCooldown--;
 
+        // M = Mute Toggle
+        if (keys['KeyM']) {
+            keys['KeyM'] = false;
+            SFX.muted = !SFX.muted;
+        }
+
         // L = Level Select (jederzeit)
         if (keys['KeyL'] && this.state !== 'levelSelect') {
             keys['KeyL'] = false;
@@ -101,6 +107,7 @@ const game = {
         // ── MENU ────────────────────────────────────────────
         if (this.state === 'menu') {
             if (isJump() || keys['Enter']) {
+                SFX.menuSelect();
                 if (this.highestUnlocked > 0) {
                     this.state = 'levelSelect';
                     this.selectedLevel = 0;
@@ -217,6 +224,7 @@ const game = {
                 if (aabb(this.player, eb)) {
                     this.state = 'levelComplete';
                     this.levelCompleteTimer = 90;
+                    SFX.levelComplete();
                     const cx = this.player.x + this.player.w / 2;
                     const cy = this.player.y + this.player.h / 2;
                     spawnParticles(cx, cy, 30, '#2ecc71');

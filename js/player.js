@@ -36,6 +36,7 @@ class Player {
     die() {
         if (!this.alive) return;
         this.alive = false;
+        SFX.death();
         spawnParticles(this.x + this.w / 2, this.y + this.h / 2, 25, '#222');
         spawnParticles(this.x + this.w / 2, this.y + this.h / 2, 10, '#e74c3c');
         triggerShake(8);
@@ -78,6 +79,7 @@ class Player {
             this.jumpPressed = true;
             this.squash = 0.6;
             this.stretch = 1.3;
+            SFX.jump();
         }
         if (!isJump()) this.jumpPressed = false;
 

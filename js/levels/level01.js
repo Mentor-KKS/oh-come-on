@@ -18,6 +18,40 @@ LEVELS.push({
     ],
     spikes: [],
     traps: [
-        new FallingFloor(620, 470, 100, 30),
+        // Schneller FallingFloor — fällt nach 20 Frames statt 75
+        {
+            x: 620, y: 470, origY: 470, w: 100, h: 30,
+            solid: true, triggered: false, shakeTimer: 0,
+            falling: false, vy: 0, type: 'fallingFloor',
+            update(player) {
+                if (!this.triggered && this.solid && player.alive && player.grounded &&
+                    player.x + player.w > this.x && player.x < this.x + this.w &&
+                    Math.abs((player.y + player.h) - this.y) < 3) {
+                    this.triggered = true;
+                    this.shakeTimer = 20;
+                    SFX.trapTrigger();
+                }
+                if (this.triggered && !this.falling) {
+                    this.shakeTimer--;
+                    if (this.shakeTimer <= 0) this.falling = true;
+                }
+                if (this.falling) {
+                    this.vy += 0.4;
+                    this.y += this.vy;
+                    if (this.y > H + 50) this.solid = false;
+                }
+            },
+            draw() {
+                if (this.y > H + 50) return;
+                let dx = 0;
+                if (this.triggered && !this.falling) dx = rand(-2, 2);
+                rect(this.x + dx, this.y, this.w, this.h, '#d0d0d0');
+                rect(this.x + dx, this.y, this.w, 3, '#e8e8e8');
+            },
+            reset() {
+                this.y = this.origY; this.solid = true; this.triggered = false;
+                this.shakeTimer = 0; this.falling = false; this.vy = 0;
+            }
+        },
     ],
 });

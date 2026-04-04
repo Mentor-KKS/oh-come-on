@@ -29,9 +29,10 @@ function drawMenu(frameCount, highestUnlocked) {
 
     ctx.fillStyle = '#555';
     ctx.font = '14px "Courier New", monospace';
-    ctx.fillText('Arrow Keys / WASD  —  Move & Jump', W / 2, 370);
-    ctx.fillText('R  —  Restart Level', W / 2, 393);
-    ctx.fillText('L  —  Level Select', W / 2, 416);
+    ctx.fillText('Arrow Keys / WASD  —  Move & Jump', W / 2, 365);
+    ctx.fillText('R  —  Restart Level', W / 2, 386);
+    ctx.fillText('L  —  Level Select', W / 2, 407);
+    ctx.fillText('M  —  Sound ' + (SFX.muted ? 'OFF' : 'ON'), W / 2, 428);
 
     ctx.font = '60px serif';
     ctx.fillText('>:)', W / 2, 470);

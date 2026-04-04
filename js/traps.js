@@ -20,6 +20,7 @@ class FallingFloor {
                 Math.abs((player.y + player.h) - this.y) < 3) {
                 this.triggered = true;
                 this.shakeTimer = 75;
+                SFX.trapTrigger();
             }
         }
         if (this.triggered && !this.falling) {
@@ -152,6 +153,7 @@ class MovingExit {
                 this.targetX = this.positions[this.index].x;
                 this.targetY = this.positions[this.index].y;
                 this.moving = true;
+                SFX.exitMove();
             }
         }
         if (this.moving) {
@@ -631,6 +633,7 @@ class InvertZone {
         if (!this.triggered && player.alive && player.x > this.triggerX) {
             this.triggered = true;
             game.levelData.invertControls = !game.levelData.invertControls;
+            SFX.invertFlip();
         }
     }
     draw() {} // komplett unsichtbar!
