@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OH COME ON!</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+        }
+
+        #gameCanvas {
+            background: #1a1a2e;
+            border-radius: 4px;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+    <!-- Engine: Config, Input, Utils, Particles, Shake -->
+    <script src="js/engine.js"></script>
+
+    <!-- Player -->
+    <script src="js/player.js"></script>
+
+    <!-- Trap-Klassen -->
+    <script src="js/traps.js"></script>
+
+    <!-- Renderer: Platform, Spike, Exit zeichnen -->
+    <script src="js/renderer.js"></script>
+
+    <!-- UI: Menu, HUD, Win Screen -->
+    <script src="js/ui.js"></script>
+
+    <!-- Game: Loop, State, Level Management (erstellt LEVELS[]) -->
+    <script src="js/game.js"></script>
+
+    <!-- Levels: Jedes Level ist eine eigene Datei -->
+    <!-- Neue Level einfach als levelXX.js hinzufügen und hier einbinden -->
+    <script src="js/levels/level01.js"></script>
+    <script src="js/levels/level02.js"></script>
+    <script src="js/levels/level03.js"></script>
+    <script src="js/levels/level04.js"></script>
+    <script src="js/levels/level05.js"></script>
+    <script src="js/levels/level06.js"></script>
+    <script src="js/levels/level07.js"></script>
+    <script src="js/levels/level08.js"></script>
+    <script src="js/levels/level09.js"></script>
+    <script src="js/levels/level10.js"></script>
+</body>
+</html>
