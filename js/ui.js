@@ -6,32 +6,50 @@ function drawMenu(frameCount, highestUnlocked) {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 44px "Courier New", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('OH COME ON!', W / 2, 150);
+    ctx.fillText('OH COME ON!', W / 2, 120);
 
     ctx.fillStyle = '#e74c3c';
     ctx.font = 'bold 20px "Courier New", monospace';
-    ctx.fillText('...f*ck off.', W / 2, 185);
+    ctx.fillText('...f*ck off.', W / 2, 155);
 
     ctx.fillStyle = '#666';
     ctx.font = '14px "Courier New", monospace';
-    ctx.fillText('Nothing is what it seems...', W / 2, 210);
+    ctx.fillText('Nothing is what it seems...', W / 2, 180);
+
+    // Speedrun-Status
+    if (game.speedrunMode) {
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = 'bold 18px "Courier New", monospace';
+        ctx.fillText('★ SPEEDRUN MODE ★', W / 2, 225);
+    } else {
+        ctx.fillStyle = '#444';
+        ctx.font = '14px "Courier New", monospace';
+        ctx.fillText('Speedrun: OFF', W / 2, 225);
+    }
+    // Best-Time anzeigen falls vorhanden
+    if (game.speedrunBestTime < Infinity) {
+        ctx.fillStyle = '#888';
+        ctx.font = '13px "Courier New", monospace';
+        ctx.fillText(`Best: ${game.speedrunBestTime.toFixed(2)}s`, W / 2, 245);
+    }
 
     const blink = Math.sin(frameCount * 0.06) > 0;
     if (blink) {
         ctx.fillStyle = '#aaa';
         ctx.font = '20px "Courier New", monospace';
-        ctx.fillText('Press SPACE to play', W / 2, 300);
+        ctx.fillText('Press SPACE to play', W / 2, 290);
     }
 
     ctx.fillStyle = '#555';
-    ctx.font = '14px "Courier New", monospace';
-    ctx.fillText('Arrow Keys / WASD  —  Move & Jump', W / 2, 365);
-    ctx.fillText('R  —  Restart Level', W / 2, 386);
-    ctx.fillText('L  —  Level Select', W / 2, 407);
-    ctx.fillText('M  —  Sound ' + (SFX.muted ? 'OFF' : 'ON'), W / 2, 428);
+    ctx.font = '13px "Courier New", monospace';
+    ctx.fillText('Arrow Keys / WASD  —  Move & Jump', W / 2, 350);
+    ctx.fillText('R  —  Restart Level    ESC  —  Menu', W / 2, 368);
+    ctx.fillText('L  —  Level Select', W / 2, 386);
+    ctx.fillText('M  —  Sound ' + (SFX.muted ? 'OFF' : 'ON'), W / 2, 404);
+    ctx.fillText('S  —  Speedrun ' + (game.speedrunMode ? 'ON' : 'OFF'), W / 2, 422);
 
-    ctx.font = '60px serif';
-    ctx.fillText('>:)', W / 2, 470);
+    ctx.font = '50px serif';
+    ctx.fillText('>:)', W / 2, 478);
     ctx.textAlign = 'left';
 }
 
@@ -113,9 +131,16 @@ function drawHUD(currentLevel, totalLevels, totalDeaths) {
     ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
     ctx.fillText(`Deaths: ${totalDeaths}`, W - 130, 25);
 
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.font = '11px "Courier New", monospace';
-    ctx.fillText('[L] Level Select', W / 2 - 45, 25);
+    // Speedrun Timer (wenn aktiv)
+    if (game.speedrunMode && game.speedrunStartTime) {
+        ctx.fillStyle = 'rgba(241, 196, 15, 0.9)';
+        ctx.font = 'bold 15px "Courier New", monospace';
+        ctx.fillText(`⏱ ${game.getSpeedrunElapsed().toFixed(2)}s`, W / 2 - 45, 25);
+    } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.font = '11px "Courier New", monospace';
+        ctx.fillText('[L] Level Select', W / 2 - 45, 25);
+    }
 }
 
 function drawLevelTitle(currentLevel, name, titleTimer) {
@@ -172,12 +197,27 @@ function drawWinScreen(totalDeaths, winTimer, frameCount) {
     ctx.font = '16px "Courier New", monospace';
     ctx.fillText(rating, W / 2, 320);
 
+    // Speedrun Finale Zeit
+    if (game.speedrunMode && game.speedrunFinalTime > 0) {
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = 'bold 22px "Courier New", monospace';
+        ctx.fillText(`⏱ Speedrun: ${game.speedrunFinalTime.toFixed(2)}s`, W / 2, 360);
+        ctx.fillStyle = '#888';
+        ctx.font = '14px "Courier New", monospace';
+        if (game.speedrunBestTime < Infinity && game.speedrunFinalTime <= game.speedrunBestTime + 0.01) {
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillText('NEW BEST TIME!', W / 2, 385);
+        } else if (game.speedrunBestTime < Infinity) {
+            ctx.fillText(`Best: ${game.speedrunBestTime.toFixed(2)}s`, W / 2, 385);
+        }
+    }
+
     if (winTimer > 60) {
         const blink = Math.sin(frameCount * 0.06) > 0;
         if (blink) {
             ctx.fillStyle = '#555';
-            ctx.font = '16px "Courier New", monospace';
-            ctx.fillText('Press ENTER to play again', W / 2, 400);
+            ctx.font = '14px "Courier New", monospace';
+            ctx.fillText('Press ENTER to play again', W / 2, 430);
         }
     }
     ctx.textAlign = 'left';

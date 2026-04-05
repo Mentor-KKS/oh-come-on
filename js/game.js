@@ -23,6 +23,12 @@ const game = {
     highestUnlocked: 0,
     selectedLevel: 0,
     navCooldown: 0,
+    // Speedrun
+    speedrunMode: false,
+    speedrunStartTime: 0,
+    speedrunPenalty: 0,
+    speedrunFinalTime: 0,
+    speedrunBestTime: Infinity,
 
     init() {
         this.state = 'menu';
@@ -31,6 +37,21 @@ const game = {
         this.currentLevel = 0;
         // Fortschritt laden
         this.highestUnlocked = parseInt(localStorage.getItem('ohcomeon_progress') || '0');
+        // Speedrun-Bestzeit laden
+        const best = parseFloat(localStorage.getItem('ohcomeon_best') || 'Infinity');
+        this.speedrunBestTime = isNaN(best) ? Infinity : best;
+    },
+
+    startSpeedrun() {
+        this.speedrunMode = true;
+        this.speedrunStartTime = Date.now();
+        this.speedrunPenalty = 0;
+        this.speedrunFinalTime = 0;
+    },
+
+    getSpeedrunElapsed() {
+        if (!this.speedrunStartTime) return 0;
+        return (Date.now() - this.speedrunStartTime + this.speedrunPenalty) / 1000;
     },
 
     saveProgress() {
@@ -72,6 +93,10 @@ const game = {
         this.totalDeaths++;
         this.state = 'dead';
         this.respawnTimer = CFG.respawnDelay;
+        // Speedrun: +3s Strafe pro Tod
+        if (this.speedrunMode && this.speedrunStartTime) {
+            this.speedrunPenalty += 3000;
+        }
     },
 
     getExitBounds() {
@@ -102,18 +127,34 @@ const game = {
             SFX.setMuted(!SFX.muted);
         }
 
-        // L = Level Select (jederzeit)
-        if (keys['KeyL'] && this.state !== 'levelSelect') {
+        // L = Level Select (nur im normalen Modus, nicht im Speedrun!)
+        if (keys['KeyL'] && this.state !== 'levelSelect' && !this.speedrunMode) {
             keys['KeyL'] = false;
             this.state = 'levelSelect';
             this.selectedLevel = this.currentLevel || 0;
             return;
         }
 
+        // ESC = zurück zum Menü (ausser im Menü selber)
+        if (keys['Escape'] && this.state !== 'menu' && this.state !== 'levelSelect') {
+            keys['Escape'] = false;
+            this.state = 'menu';
+            // Speedrun-Timer zurücksetzen (neuer Run beginnt mit frischer Zeit)
+            this.speedrunStartTime = 0;
+            this.speedrunPenalty = 0;
+            return;
+        }
+
         // ── MENU ────────────────────────────────────────────
         if (this.state === 'menu') {
+            // S = Speedrun Toggle
+            if (keys['KeyS']) {
+                keys['KeyS'] = false;
+                this.speedrunMode = !this.speedrunMode;
+            }
             if (isJump() || keys['Enter']) {
                 SFX.menuSelect();
+                if (this.speedrunMode) this.startSpeedrun();
                 this.startLevel(0);
             }
             return;
@@ -168,6 +209,14 @@ const game = {
                 } else {
                     this.state = 'win';
                     this.winTimer = 0;
+                    // Speedrun: Finale Zeit berechnen + Best-Time speichern
+                    if (this.speedrunMode && this.speedrunStartTime) {
+                        this.speedrunFinalTime = this.getSpeedrunElapsed();
+                        if (this.speedrunFinalTime < this.speedrunBestTime) {
+                            this.speedrunBestTime = this.speedrunFinalTime;
+                            localStorage.setItem('ohcomeon_best', this.speedrunBestTime);
+                        }
+                    }
                 }
             }
             return;
