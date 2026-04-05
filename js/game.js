@@ -145,6 +145,14 @@ const game = {
             return;
         }
 
+        // N = Neuer Speedrun (direkt, ohne zurück ins Menü)
+        if (keys['KeyN'] && this.speedrunMode && this.state !== 'menu') {
+            keys['KeyN'] = false;
+            this.startSpeedrun();
+            this.startLevel(0);
+            return;
+        }
+
         // ── MENU ────────────────────────────────────────────
         if (this.state === 'menu') {
             // S = Speedrun Toggle

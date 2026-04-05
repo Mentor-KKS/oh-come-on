@@ -42,11 +42,11 @@ function drawMenu(frameCount, highestUnlocked) {
 
     ctx.fillStyle = '#555';
     ctx.font = '13px "Courier New", monospace';
-    ctx.fillText('Arrow Keys / WASD  —  Move & Jump', W / 2, 350);
-    ctx.fillText('R  —  Restart Level    ESC  —  Menu', W / 2, 368);
-    ctx.fillText('L  —  Level Select', W / 2, 386);
-    ctx.fillText('M  —  Sound ' + (SFX.muted ? 'OFF' : 'ON'), W / 2, 404);
-    ctx.fillText('S  —  Speedrun ' + (game.speedrunMode ? 'ON' : 'OFF'), W / 2, 422);
+    ctx.fillText('Arrow Keys / WASD  —  Move & Jump', W / 2, 345);
+    ctx.fillText('R  —  Restart Level    ESC  —  Menu', W / 2, 363);
+    ctx.fillText('L  —  Level Select    N  —  New Speedrun', W / 2, 381);
+    ctx.fillText('M  —  Sound ' + (SFX.muted ? 'OFF' : 'ON'), W / 2, 399);
+    ctx.fillText('S  —  Speedrun ' + (game.speedrunMode ? 'ON' : 'OFF'), W / 2, 417);
 
     ctx.font = '50px serif';
     ctx.fillText('>:)', W / 2, 478);
