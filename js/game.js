@@ -44,7 +44,8 @@ const game = {
 
     startSpeedrun() {
         this.speedrunMode = true;
-        this.speedrunStartTime = Date.now();
+        this.speedrunStartTime = 0;    // Startet erst bei erster Tasten-Berührung
+        this.speedrunPending = true;
         this.speedrunPenalty = 0;
         this.speedrunFinalTime = 0;
         this.totalDeaths = 0;
@@ -244,6 +245,13 @@ const game = {
         // ── PLAYING ─────────────────────────────────────────
         if (this.titleTimer > 0) this.titleTimer--;
         if (keys['KeyR']) { this.player.die(); return; }
+
+        // Speedrun-Timer startet bei erster Steuerungs-Taste
+        if (this.speedrunMode && this.speedrunPending &&
+            (isLeft() || isRight() || isJump() || keys['ArrowDown'] || keys['KeyS'])) {
+            this.speedrunStartTime = Date.now();
+            this.speedrunPending = false;
+        }
 
         const platforms = this.getAllPlatforms();
         this.player.update(platforms);
