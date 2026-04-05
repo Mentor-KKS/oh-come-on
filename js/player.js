@@ -12,6 +12,7 @@ class Player {
         this.h = CFG.playerSize;
         this.vx = 0;
         this.vy = 0;
+        this.extVx = 0;
         this.grounded = false;
         this.coyote = 0;
         this.jumpPressed = false;
@@ -26,6 +27,7 @@ class Player {
         this.y = this.startY;
         this.vx = 0;
         this.vy = 0;
+        this.extVx = 0;
         this.grounded = false;
         this.coyote = 0;
         this.alive = true;
@@ -73,8 +75,10 @@ class Player {
         if (this.grounded) this.coyote = CFG.coyoteTime;
         else this.coyote--;
 
+        const gDir = (game.levelData && game.levelData.gravityDir) || 1;
+
         if (isJump() && !this.jumpPressed && this.coyote > 0) {
-            this.vy = CFG.jumpForce;
+            this.vy = CFG.jumpForce * gDir;
             this.coyote = 0;
             this.jumpPressed = true;
             this.squash = 0.6;
@@ -83,17 +87,22 @@ class Player {
         }
         if (!isJump()) this.jumpPressed = false;
 
-        // Variable jump height
-        if (this.vy < -2 && !isJump()) {
+        // Variable jump height (richtungsabhängig)
+        if (this.vy * gDir < -2 && !isJump()) {
             this.vy *= 0.85;
         }
 
-        // Gravity
-        this.vy += CFG.gravity;
-        if (this.vy > CFG.maxFallSpeed) this.vy = CFG.maxFallSpeed;
+        // Gravity (richtungsabhängig)
+        this.vy += CFG.gravity * gDir;
+        // Fall-Speed-Cap nur in Gravitationsrichtung (nicht gegen Sprung!)
+        if (this.vy * gDir > CFG.maxFallSpeed) {
+            this.vy = CFG.maxFallSpeed * gDir;
+        }
 
-        // Move X & collide
-        this.x += this.vx;
+        // Move X & collide (inkl. externer Kraft wie Wind)
+        this.x += this.vx + this.extVx;
+        this.extVx *= 0.9;  // Decay
+        if (Math.abs(this.extVx) < 0.02) this.extVx = 0;
         this.grounded = false;
         this.resolveCollisions(platforms, 'x');
 
@@ -105,14 +114,15 @@ class Player {
         this.squash = lerp(this.squash, 1, 0.15);
         this.stretch = lerp(this.stretch, 1, 0.15);
 
-        // Out of bounds = death
+        // Out of bounds = death (auch nach oben bei reverse gravity)
         const levelW = (game.levelData && game.levelData.width) || W;
-        if (this.y > H + 50 || this.x < -50 || this.x > levelW + 50) {
+        if (this.y > H + 50 || this.y < -50 || this.x < -50 || this.x > levelW + 50) {
             this.die();
         }
     }
 
     resolveCollisions(platforms, axis) {
+        const gDir = (game.levelData && game.levelData.gravityDir) || 1;
         for (const p of platforms) {
             if (p.solid === false) continue;
             if (aabb(this, p)) {
@@ -124,16 +134,21 @@ class Player {
                     }
                     this.vx = 0;
                 } else {
-                    if (this.vy > 0) {
-                        this.y = p.y - this.h;
+                    // In Gravitationsrichtung = landen. Dagegen = Kopfstoß.
+                    if (this.vy * gDir > 0) {
+                        // Landung
+                        if (gDir > 0) this.y = p.y - this.h;
+                        else this.y = p.y + p.h;
                         this.vy = 0;
                         this.grounded = true;
                         if (this.stretch > 1.05) {
                             this.squash = 1.2;
                             this.stretch = 0.8;
                         }
-                    } else if (this.vy < 0) {
-                        this.y = p.y + p.h;
+                    } else if (this.vy * gDir < 0) {
+                        // Kopfstoß
+                        if (gDir > 0) this.y = p.y + p.h;
+                        else this.y = p.y - this.h;
                         this.vy = 0;
                     }
                 }

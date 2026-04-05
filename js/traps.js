@@ -666,6 +666,164 @@ class FakeSpikes {
     reset() {}
 }
 
+// === NEUE TRAPS FÜR LEVEL 11-15 ===
+
+// Darkness Overlay — Level ist dunkel, nur Umkreis um Spieler sichtbar
+class DarknessOverlay {
+    constructor(radius) {
+        this.radius = radius || 95;
+        this.type = 'darknessOverlay';
+    }
+    update() {}
+    draw() {
+        const player = game.player;
+        if (!player) return;
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, this.radius * 1.8);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(0.45, 'rgba(0,0,0,0.4)');
+        grad.addColorStop(1, 'rgba(0,0,0,1)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(-2000, -500, 5000, 2500);
+    }
+    reset() {}
+}
+
+// Wind Zone — schiebt den Spieler in eine Richtung
+class WindZone {
+    constructor(x, y, w, h, force) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.force = force; // + = rechts, - = links
+        this.type = 'windZone';
+    }
+    update(player) {
+        if (player.alive && aabb(player, this)) {
+            player.extVx += this.force;
+        }
+    }
+    draw() {
+        ctx.globalAlpha = 0.1;
+        ctx.fillStyle = '#87ceeb';
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        // Animierte Windlinien
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        const dir = Math.sign(this.force);
+        const offset = ((game.frameCount * dir * 1.5) % 28 + 28) % 28;
+        for (let row = 0; row < Math.ceil(this.h / 22); row++) {
+            const ly = this.y + 10 + row * 22;
+            if (ly > this.y + this.h - 5) continue;
+            for (let col = 0; col < Math.ceil(this.w / 28) + 1; col++) {
+                const lx = this.x + col * 28 + offset - 14;
+                if (lx >= this.x + 3 && lx + 12 <= this.x + this.w - 3) {
+                    ctx.beginPath();
+                    ctx.moveTo(lx, ly);
+                    ctx.lineTo(lx + 12 * dir, ly);
+                    ctx.stroke();
+                }
+            }
+        }
+        ctx.globalAlpha = 1;
+    }
+    reset() {}
+}
+
+// Switch — Schalter der Plattformen mit passender Gruppe togglet
+class Switch {
+    constructor(x, y, group) {
+        this.x = x; this.y = y;
+        this.w = 36; this.h = 10;
+        this.group = group;
+        this.pressed = false;
+        this.type = 'switch';
+    }
+    update(player) {
+        if (this.pressed || !player.alive) return;
+        const standing = player.x + player.w > this.x && player.x < this.x + this.w &&
+                        player.y + player.h > this.y && player.y + player.h < this.y + 14;
+        if (standing) {
+            this.pressed = true;
+            SFX.menuSelect();
+            game.levelData.traps.forEach(t => {
+                if (t.type === 'togglePlatform' && t.group === this.group) {
+                    t.active = !t.active;
+                }
+            });
+        }
+    }
+    draw() {
+        const offset = this.pressed ? 4 : 0;
+        rect(this.x, this.y + 4, this.w, 6, '#333');
+        rect(this.x + 2, this.y + offset, this.w - 4, 6 - offset,
+             this.pressed ? '#2ecc71' : '#e74c3c');
+    }
+    reset() { this.pressed = false; }
+}
+
+// Toggle Platform — wird durch Switches aktiviert/deaktiviert
+class TogglePlatform {
+    constructor(x, y, w, h, group, startActive) {
+        this.x = x; this.y = y; this.w = w; this.h = h || 20;
+        this.group = group;
+        this.initialActive = !!startActive;
+        this.active = this.initialActive;
+        this.type = 'togglePlatform';
+    }
+    get solid() { return this.active; }
+    update() {}
+    draw() {
+        if (!this.active) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.setLineDash([6, 4]);
+            ctx.strokeRect(this.x, this.y, this.w, this.h);
+            ctx.setLineDash([]);
+            return;
+        }
+        rect(this.x, this.y, this.w, this.h, '#b0d0f0');
+        rect(this.x, this.y, this.w, 3, '#d0e8ff');
+    }
+    reset() { this.active = this.initialActive; }
+}
+
+// Shadow Player — spiegelt Spieler-Position horizontal um Level-Mitte
+class ShadowPlayer {
+    constructor() {
+        this.x = 0; this.y = 0;
+        this.w = 20; this.h = 20;
+        this.type = 'shadowPlayer';
+    }
+    update(player) {
+        if (!player.alive) return;
+        const levelW = game.levelData.width || W;
+        const centerX = levelW / 2;
+        const playerCenter = player.x + player.w / 2;
+        this.x = centerX - (playerCenter - centerX) - this.w / 2;
+        this.y = player.y;
+
+        // Shadow tötet Spieler wenn er in Spikes läuft
+        for (const s of game.levelData.spikes) {
+            const sHit = { x: s.x + 3, y: s.y + 3, w: s.w - 6, h: s.h - 6 };
+            if (aabb(this, sHit)) {
+                player.die();
+                return;
+            }
+        }
+    }
+    draw() {
+        ctx.globalAlpha = 0.65;
+        ctx.fillStyle = '#6c5ce7';
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        // Augen
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(this.x + 4, this.y + 6, 3, 3);
+        ctx.fillRect(this.x + 13, this.y + 6, 3, 3);
+        ctx.globalAlpha = 1;
+    }
+    reset() {}
+}
+
 // Room Cover — verdeckt einen Bereich mit Hintergrundfarbe
 // Faded weg wenn Spieler reingeht → Raum wird sichtbar
 class RoomCover {

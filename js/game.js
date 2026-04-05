@@ -80,7 +80,7 @@ const game = {
     getAllPlatforms() {
         const lvl = this.levelData;
         const plats = [...lvl.platforms];
-        const platformTypes = ['fallingFloor', 'disappearing', 'hiddenPlatform', 'trollShaker', 'triggerFloor', 'dodgingPlatform', 'timedFloor'];
+        const platformTypes = ['fallingFloor', 'disappearing', 'hiddenPlatform', 'trollShaker', 'triggerFloor', 'dodgingPlatform', 'timedFloor', 'togglePlatform'];
         lvl.traps.forEach(t => {
             if (t.solid && platformTypes.includes(t.type)) plats.push(t);
         });
@@ -94,7 +94,7 @@ const game = {
         // M = Mute Toggle
         if (keys['KeyM']) {
             keys['KeyM'] = false;
-            SFX.muted = !SFX.muted;
+            SFX.setMuted(!SFX.muted);
         }
 
         // L = Level Select (jederzeit)
@@ -261,7 +261,8 @@ const game = {
         ctx.translate(-this.cameraX, 0);
 
         lvl.platforms.forEach(p => drawPlatform(p));
-        lvl.traps.forEach(t => t.draw());
+        // Alle Traps AUSSER Darkness (wird zuletzt gezeichnet)
+        lvl.traps.forEach(t => { if (t.type !== 'darknessOverlay') t.draw(); });
         lvl.spikes.forEach(s => drawSpike(s));
         if (lvl.exit) {
             let show = true;
@@ -271,6 +272,8 @@ const game = {
         }
         this.player.draw();
         updateParticles();
+        // Darkness Overlay ZULETZT (überdeckt alles im World Space)
+        lvl.traps.forEach(t => { if (t.type === 'darknessOverlay') t.draw(); });
 
         ctx.restore();
         // === SCREEN SPACE (HUD, fixiert) ===

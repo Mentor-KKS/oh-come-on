@@ -4,7 +4,12 @@
 
 const SFX = {
     ctx: null,
-    muted: false,
+    muted: true,
+
+    setMuted(m) {
+        this.muted = m;
+        if (this.bgGain) this.bgGain.gain.value = m ? 0 : 0.04;
+    },
 
     init() {
         if (this.ctx) return;
