@@ -51,8 +51,13 @@ const game = {
         if (!SFX.bgPlaying) SFX.startMusic();
         // Camera direkt auf Spieler setzen (cameraMinX = versteckt Bereich links)
         const lvlW = lvl.width || W;
+        let zoom = 1;
+        if (lvl.width && lvl.height) {
+            zoom = Math.min(W / lvl.width, H / lvl.height);
+        }
+        const visibleW = W / zoom;
         const camMin = lvl.cameraMinX || 0;
-        this.cameraX = Math.max(camMin, Math.min(this.player.x - W / 2, lvlW - W));
+        this.cameraX = Math.max(camMin, Math.min(this.player.x - visibleW / 2, lvlW - visibleW));
         lvl.traps.forEach(t => t.reset());
     },
 
@@ -80,7 +85,7 @@ const game = {
     getAllPlatforms() {
         const lvl = this.levelData;
         const plats = [...lvl.platforms];
-        const platformTypes = ['fallingFloor', 'disappearing', 'hiddenPlatform', 'trollShaker', 'triggerFloor', 'dodgingPlatform', 'timedFloor', 'togglePlatform'];
+        const platformTypes = ['fallingFloor', 'disappearing', 'hiddenPlatform', 'trollShaker', 'triggerFloor', 'dodgingPlatform', 'timedFloor', 'togglePlatform', 'movingPlatform'];
         lvl.traps.forEach(t => {
             if (t.solid && platformTypes.includes(t.type)) plats.push(t);
         });
@@ -183,13 +188,17 @@ const game = {
         this.player.update(platforms);
         this.levelData.traps.forEach(t => t.update(this.player));
 
-        // Camera folgt Spieler (smooth, mit cameraMinX Support)
+        // Camera folgt Spieler (smooth, mit cameraMinX + zoom Support)
         const lvlW = this.levelData.width || W;
-        if (lvlW > W) {
+        let zoom = 1;
+        if (this.levelData.width && this.levelData.height) {
+            zoom = Math.min(W / this.levelData.width, H / this.levelData.height);
+        }
+        const visibleW = W / zoom;
+        if (lvlW > visibleW) {
             const camMin = this.levelData.cameraMinX || 0;
-            // Wenn Spieler links vom Minimum ist, Camera folgt trotzdem
             const effectiveMin = Math.min(camMin, this.player.x - 20);
-            const target = Math.max(effectiveMin, Math.min(this.player.x - W / 2, lvlW - W));
+            const target = Math.max(effectiveMin, Math.min(this.player.x - visibleW / 2, lvlW - visibleW));
             this.cameraX = lerp(this.cameraX, target, 0.08);
         } else {
             this.cameraX = 0;
@@ -256,8 +265,19 @@ const game = {
 
         const lvl = this.levelData;
 
-        // === WORLD SPACE (mit Camera) ===
+        // === WORLD SPACE (mit Camera + Zoom) ===
         ctx.save();
+        // Auto-Zoom: wenn BEIDE Dimensionen gesetzt, wird das Level exakt eingepasst
+        let zoom = 1;
+        if (lvl.width && lvl.height) {
+            zoom = Math.min(W / lvl.width, H / lvl.height);
+        }
+        if (zoom !== 1) {
+            const offsetX = (W - lvl.width * zoom) / 2;
+            const offsetY = (H - lvl.height * zoom) / 2;
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(zoom, zoom);
+        }
         ctx.translate(-this.cameraX, 0);
 
         lvl.platforms.forEach(p => drawPlatform(p));
@@ -270,6 +290,8 @@ const game = {
             if (lvl.exit.showBelowX && this.player.x >= lvl.exit.showBelowX) show = false;
             if (show) drawExit(lvl.exit);
         }
+        // Shadow-Exit (nur visuell, kein Level-Complete-Check)
+        if (lvl.shadowExit) drawExit(lvl.shadowExit);
         this.player.draw();
         updateParticles();
         // Darkness Overlay ZULETZT (überdeckt alles im World Space)

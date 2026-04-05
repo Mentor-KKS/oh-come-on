@@ -96,18 +96,23 @@ class RisingSpikes {
 }
 
 class FallingCeiling {
-    constructor(x, y, w, h, triggerX) {
+    constructor(x, y, w, h, triggerX, fake, triggerMaxY) {
         this.x = x; this.origY = y; this.y = y;
         this.w = w; this.h = h || 30;
         this.triggerX = triggerX;
+        this.triggerMaxY = triggerMaxY || null;  // nur triggern wenn player.y < triggerMaxY
         this.triggered = false;
         this.vy = 0;
         this.solid = true;
+        this.fake = fake || false;  // Fake blocks fallen, töten aber nicht
         this.type = 'fallingCeiling';
     }
     update(player) {
+        if (this.fake) return;  // Fake blocks bleiben einfach hängen (nur visuell)
         if (!this.triggered && player.alive) {
-            if (Math.abs(player.x + player.w / 2 - this.triggerX) < 40) this.triggered = true;
+            const xMatch = Math.abs(player.x + player.w / 2 - this.triggerX) < 40;
+            const yMatch = !this.triggerMaxY || player.y < this.triggerMaxY;
+            if (xMatch && yMatch) this.triggered = true;
         }
         if (this.triggered) {
             this.vy += 0.2;
@@ -115,10 +120,14 @@ class FallingCeiling {
         }
         if (this.triggered && player.alive && this.vy > 0) {
             if (aabb(player, this)) player.die();
+            // Auch Shadow-Kollision prüfen (falls ShadowPlayer im Level ist)
+            const shadow = game.levelData.traps.find(t => t.type === 'shadowPlayer');
+            if (shadow && aabb(shadow, this)) player.die();
         }
     }
     draw() {
-        if (this.y > H + 50) return;
+        const lvlH = (game.levelData && game.levelData.height) || H;
+        if (this.y > lvlH + 50) return;
         rect(this.x, this.y, this.w, this.h, '#b0b0b0');
         rect(this.x, this.y + this.h - 3, this.w, 3, '#999');
     }
@@ -277,6 +286,7 @@ class ShootingSpike {
         }
     }
     draw() {
+        if (!this.triggered) return;  // Vor dem Trigger unsichtbar
         ctx.fillStyle = '#e74c3c';
         ctx.beginPath();
         if (this.dir === 'right') {
@@ -421,16 +431,72 @@ class HiddenPlatform {
         }
     }
     draw() {
-        if (!this.visible) return;
-        ctx.globalAlpha = this.alpha;
-        rect(this.x, this.y, this.w, this.h, '#b0d0f0');
-        rect(this.x, this.y, this.w, 3, '#d0e8ff');
-        ctx.globalAlpha = 1;
+        // Permanent unsichtbar
     }
     reset() {
         this.visible = false;
         this.solid = false;
         this.alpha = 0;
+    }
+}
+
+// Moving Platform — bewegt sich zum Zielpunkt sobald Spieler draufsteht
+// Carriert den Spieler mit
+class MovingPlatform {
+    constructor(x, y, w, h, targetX, targetY, speed, disappearAt) {
+        this.origX = x; this.x = x;
+        this.origY = y; this.y = y;
+        this.w = w; this.h = h || 15;
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.speed = speed || 0.8;
+        this.disappearAt = disappearAt;  // x-Position wo die Platform verschwindet
+        this.triggered = false;
+        this.solid = true;
+        this.type = 'movingPlatform';
+    }
+    update(player) {
+        if (!this.triggered && player.alive && player.grounded &&
+            player.x + player.w > this.x && player.x < this.x + this.w &&
+            Math.abs((player.y + player.h) - this.y) < 3) {
+            this.triggered = true;
+        }
+        if (this.triggered) {
+            const dx = this.targetX - this.x;
+            const dy = this.targetY - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > this.speed) {
+                const moveX = (dx / dist) * this.speed;
+                const moveY = (dy / dist) * this.speed;
+                this.x += moveX;
+                this.y += moveY;
+                // Spieler mittragen wenn er auf der Platform steht
+                if (player.alive &&
+                    player.x + player.w > this.x - 2 && player.x < this.x + this.w + 2 &&
+                    Math.abs((player.y + player.h) - this.y) < 6) {
+                    player.x += moveX;
+                    player.y += moveY;
+                }
+            } else {
+                this.x = this.targetX;
+                this.y = this.targetY;
+            }
+            // Platform verschwindet bei disappearAt (x-Position)
+            if (this.disappearAt !== undefined && this.x <= this.disappearAt) {
+                this.solid = false;
+            }
+        }
+    }
+    draw() {
+        if (!this.solid) return;
+        rect(this.x, this.y, this.w, this.h, '#b0d0f0');
+        rect(this.x, this.y, this.w, 3, '#d0e8ff');
+    }
+    reset() {
+        this.x = this.origX;
+        this.y = this.origY;
+        this.triggered = false;
+        this.solid = true;
     }
 }
 
@@ -690,37 +756,52 @@ class DarknessOverlay {
     reset() {}
 }
 
-// Wind Zone — schiebt den Spieler in eine Richtung
+// Wind Zone — schiebt den Spieler in eine Richtung (horizontal + vertikal)
 class WindZone {
-    constructor(x, y, w, h, force) {
+    constructor(x, y, w, h, force, forceY) {
         this.x = x; this.y = y; this.w = w; this.h = h;
-        this.force = force; // + = rechts, - = links
+        this.force = force;         // + = rechts, - = links
+        this.forceY = forceY || 0;  // + = unten, - = oben (Updraft)
         this.type = 'windZone';
     }
     update(player) {
         if (player.alive && aabb(player, this)) {
             player.extVx += this.force;
+            player.extVy += this.forceY;
         }
     }
     draw() {
         ctx.globalAlpha = 0.1;
-        ctx.fillStyle = '#87ceeb';
+        // Grün für Updraft, Blau für horizontal, Orange für Downdraft
+        ctx.fillStyle = this.forceY < 0 ? '#a0f0a0' : (this.forceY > 0 ? '#f0b080' : '#87ceeb');
         ctx.fillRect(this.x, this.y, this.w, this.h);
-        // Animierte Windlinien
-        ctx.globalAlpha = 0.35;
+
+        // Richtungsvektor aus force/forceY berechnen
+        const mag = Math.sqrt(this.force * this.force + this.forceY * this.forceY);
+        if (mag === 0) { ctx.globalAlpha = 1; return; }
+        const dx = this.force / mag;
+        const dy = this.forceY / mag;
+
+        ctx.globalAlpha = 0.45;
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        const dir = Math.sign(this.force);
-        const offset = ((game.frameCount * dir * 1.5) % 28 + 28) % 28;
-        for (let row = 0; row < Math.ceil(this.h / 22); row++) {
-            const ly = this.y + 10 + row * 22;
-            if (ly > this.y + this.h - 5) continue;
-            for (let col = 0; col < Math.ceil(this.w / 28) + 1; col++) {
-                const lx = this.x + col * 28 + offset - 14;
-                if (lx >= this.x + 3 && lx + 12 <= this.x + this.w - 3) {
+        ctx.lineWidth = 1.5;
+
+        const lineLen = 14;
+        const grid = 26;
+        const offset = (game.frameCount * 1.5) % grid;
+
+        // Grid aus Linien die in Wind-Richtung zeigen
+        for (let row = -1; row < Math.ceil(this.h / grid) + 1; row++) {
+            for (let col = -1; col < Math.ceil(this.w / grid) + 1; col++) {
+                const sx = this.x + col * grid + 8 + dx * offset;
+                const sy = this.y + row * grid + 8 + dy * offset;
+                const ex = sx + dx * lineLen;
+                const ey = sy + dy * lineLen;
+                if (sx >= this.x + 3 && ex <= this.x + this.w - 3 &&
+                    sy >= this.y + 3 && ey <= this.y + this.h - 3) {
                     ctx.beginPath();
-                    ctx.moveTo(lx, ly);
-                    ctx.lineTo(lx + 12 * dir, ly);
+                    ctx.moveTo(sx, sy);
+                    ctx.lineTo(ex, ey);
                     ctx.stroke();
                 }
             }
@@ -787,20 +868,21 @@ class TogglePlatform {
     reset() { this.active = this.initialActive; }
 }
 
-// Shadow Player — spiegelt Spieler-Position horizontal um Level-Mitte
+// Shadow Player — spiegelt Spieler-Position horizontal, optional mit Y-Offset
 class ShadowPlayer {
-    constructor() {
+    constructor(yOffset) {
         this.x = 0; this.y = 0;
         this.w = 20; this.h = 20;
+        this.yOffset = yOffset || 0;  // Vertikaler Offset in Shadow-Welt
         this.type = 'shadowPlayer';
     }
     update(player) {
         if (!player.alive) return;
         const levelW = game.levelData.width || W;
-        const centerX = levelW / 2;
-        const playerCenter = player.x + player.w / 2;
-        this.x = centerX - (playerCenter - centerX) - this.w / 2;
-        this.y = player.y;
+        // Horizontal komplett gespiegelt
+        this.x = levelW - player.x - this.w;
+        // Y mit Offset (Shadow-Welt befindet sich z.B. unterhalb)
+        this.y = player.y + this.yOffset;
 
         // Shadow tötet Spieler wenn er in Spikes läuft
         for (const s of game.levelData.spikes) {
@@ -821,6 +903,28 @@ class ShadowPlayer {
         ctx.fillRect(this.x + 13, this.y + 6, 3, 3);
         ctx.globalAlpha = 1;
     }
+    reset() {
+        // Shadow direkt auf gespiegelte Startposition + Y-Offset setzen
+        if (game.levelData && game.player) {
+            const levelW = game.levelData.width || W;
+            this.x = levelW - game.player.x - this.w;
+            this.y = game.player.y + this.yOffset;
+        }
+    }
+}
+
+// Kill Zone — unsichtbarer Bereich der den Spieler bei Berührung tötet
+class KillZone {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.type = 'killZone';
+    }
+    update(player) {
+        if (player.alive && aabb(player, this)) {
+            player.die();
+        }
+    }
+    draw() {}  // unsichtbar
     reset() {}
 }
 

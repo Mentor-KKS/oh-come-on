@@ -13,6 +13,7 @@ class Player {
         this.vx = 0;
         this.vy = 0;
         this.extVx = 0;
+        this.extVy = 0;
         this.grounded = false;
         this.coyote = 0;
         this.jumpPressed = false;
@@ -28,11 +29,14 @@ class Player {
         this.vx = 0;
         this.vy = 0;
         this.extVx = 0;
+        this.extVy = 0;
         this.grounded = false;
         this.coyote = 0;
         this.alive = true;
         this.squash = 1;
         this.stretch = 1;
+        // Gravity-Richtung aus Level (nur beim Reset, nicht mutated)
+        this.gDir = (game.levelData && game.levelData.gravityDir) || 1;
     }
 
     die() {
@@ -75,14 +79,22 @@ class Player {
         if (this.grounded) this.coyote = CFG.coyoteTime;
         else this.coyote--;
 
-        const gDir = (game.levelData && game.levelData.gravityDir) || 1;
+        if (this.gDir === undefined) this.gDir = (game.levelData && game.levelData.gravityDir) || 1;
+        const gDir = this.gDir;
 
         if (isJump() && !this.jumpPressed && this.coyote > 0) {
-            this.vy = CFG.jumpForce * gDir;
+            if (game.levelData && game.levelData.jumpFlipsGravity) {
+                // Jump flippt Gravity statt Sprung
+                this.gDir *= -1;
+                this.vy = 0;
+            } else {
+                // Normaler Sprung
+                this.vy = CFG.jumpForce * gDir;
+                this.squash = 0.6;
+                this.stretch = 1.3;
+            }
             this.coyote = 0;
             this.jumpPressed = true;
-            this.squash = 0.6;
-            this.stretch = 1.3;
             SFX.jump();
         }
         if (!isJump()) this.jumpPressed = false;
@@ -106,8 +118,10 @@ class Player {
         this.grounded = false;
         this.resolveCollisions(platforms, 'x');
 
-        // Move Y & collide
-        this.y += this.vy;
+        // Move Y & collide (inkl. vertikaler Wind)
+        this.y += this.vy + this.extVy;
+        this.extVy *= 0.9;
+        if (Math.abs(this.extVy) < 0.02) this.extVy = 0;
         this.resolveCollisions(platforms, 'y');
 
         // Squash & stretch recovery
@@ -116,13 +130,14 @@ class Player {
 
         // Out of bounds = death (auch nach oben bei reverse gravity)
         const levelW = (game.levelData && game.levelData.width) || W;
-        if (this.y > H + 50 || this.y < -50 || this.x < -50 || this.x > levelW + 50) {
+        const levelH = (game.levelData && game.levelData.height) || H;
+        if (this.y > levelH + 50 || this.y < -50 || this.x < -50 || this.x > levelW + 50) {
             this.die();
         }
     }
 
     resolveCollisions(platforms, axis) {
-        const gDir = (game.levelData && game.levelData.gravityDir) || 1;
+        const gDir = this.gDir || 1;
         for (const p of platforms) {
             if (p.solid === false) continue;
             if (aabb(this, p)) {
