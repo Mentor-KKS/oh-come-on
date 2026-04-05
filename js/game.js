@@ -47,6 +47,8 @@ const game = {
         this.speedrunStartTime = Date.now();
         this.speedrunPenalty = 0;
         this.speedrunFinalTime = 0;
+        this.totalDeaths = 0;
+        this.deaths = 0;
     },
 
     getSpeedrunElapsed() {
@@ -139,9 +141,11 @@ const game = {
         if (keys['Escape'] && this.state !== 'menu' && this.state !== 'levelSelect') {
             keys['Escape'] = false;
             this.state = 'menu';
-            // Speedrun-Timer zurücksetzen (neuer Run beginnt mit frischer Zeit)
+            // Speedrun-Zustand zurücksetzen (neuer Run beginnt frisch)
             this.speedrunStartTime = 0;
             this.speedrunPenalty = 0;
+            this.totalDeaths = 0;
+            this.deaths = 0;
             return;
         }
 
