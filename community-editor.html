@@ -135,7 +135,7 @@
                 <button class="big" onclick="testLevel()" style="background:#2ecc71;color:#000;">&#9654; Test Level</button>
                 <button class="big" onclick="showShare()" style="margin-top:5px;background:#3498db;color:#fff;">Share Level Code</button>
                 <button class="big" onclick="showImport()" style="margin-top:5px;">Import Level Code</button>
-                <a href="index.html" style="display:block;text-align:center;color:#888;font-size:11px;margin-top:8px;text-decoration:none;">← Back to Game</a>
+                <button onclick="window.location.href='index.html'" style="width:100%;margin-top:8px;padding:8px;font-size:13px;background:#e74c3c;color:#fff;border-color:#c0392b;">← Back to Game</button>
             </div>
         </div>
     </div>
@@ -148,6 +148,9 @@
             <input type="number" id="snapSize" value="5" style="width:40px;background:#0a0a15;color:#fff;border:1px solid #444;padding:2px 4px;font-family:inherit;">
             <label>Jump Arc:</label>
             <input type="checkbox" id="showArc" onchange="render()">
+            <label style="margin-left:15px;">Zoom:</label>
+            <input type="range" id="zoomRange" min="0.5" max="2" step="0.1" value="1" oninput="render()">
+            <span id="zoomLabel" style="font-size:12px;color:#888;">1x</span>
         </div>
         <div id="canvasWrap">
             <canvas id="gameCanvas" width="800" height="500"></canvas>
@@ -270,9 +273,12 @@
 
     function snap(v) { const s = +document.getElementById('snapSize').value || 1; return Math.round(v / s) * s; }
 
+    function getZoom() { return +(document.getElementById('zoomRange')?.value || 1); }
+
     function screenToWorld(sx, sy) {
         const rect = edCanvas.getBoundingClientRect();
-        return { x: (sx - rect.left) * (800 / rect.width), y: (sy - rect.top) * (500 / rect.height) };
+        const z = getZoom();
+        return { x: (sx - rect.left) * (800 * z / rect.width) / z, y: (sy - rect.top) * (500 * z / rect.height) / z };
     }
 
     // ── HIT TEST ──────────────────────────────────────────
@@ -582,7 +588,11 @@
     // ── RENDER ────────────────────────────────────────────
     function render() {
         const lvl = currentLvl;
-        edCanvas.width = 800; edCanvas.height = 500;
+        const z = getZoom();
+        document.getElementById('zoomLabel').textContent = z + 'x';
+        edCanvas.width = 800 * z; edCanvas.height = 500 * z;
+        cx.save();
+        cx.scale(z, z);
         cx.fillStyle = '#2a2a4a'; cx.fillRect(0,0,800,500);
 
         // Grid
@@ -667,6 +677,8 @@
             drawJumpArc(ps.x+10, ps.y);
             if (selected && selected.ref.w) { drawJumpArc(selected.ref.x,selected.ref.y); drawJumpArc(selected.ref.x+selected.ref.w,selected.ref.y); }
         }
+
+        cx.restore(); // Zoom restore
     }
 
     function drawJumpArc(sx, sy) {
