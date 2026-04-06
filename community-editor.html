@@ -436,6 +436,51 @@
                 <option ${r.dir==='up'?'selected':''}>up</option><option ${r.dir==='down'?'selected':''}>down</option>
                 <option ${r.dir==='left'?'selected':''}>left</option><option ${r.dir==='right'?'selected':''}>right</option></select></div>`;
         }
+        // Trap-spezifische Parameter
+        if (selected.type === 'trap' && r.type) {
+            const tp = [];
+            if (r.type === 'dodgingPlatform') {
+                tp.push({ key:'dodgeX', label:'Dodge To X', val: r.dodgeX||0 });
+                tp.push({ key:'triggerRange', label:'Trigger Range', val: r.triggerRange||80 });
+            }
+            if (r.type === 'shootingSpike') {
+                tp.push({ key:'dir', label:'Shoot Dir', val: r.dir||'left', dropdown:['left','right','up','down'] });
+                tp.push({ key:'speed', label:'Speed', val: r.speed||4 });
+                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                tp.push({ key:'disguised', label:'Disguised', val: r.disguised?'yes':'no', dropdown:['no','yes'] });
+            }
+            if (r.type === 'fallingCeiling') {
+                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+            }
+            if (r.type === 'windZone') {
+                tp.push({ key:'vx', label:'Wind X', val: r.vx||0 });
+                tp.push({ key:'vy', label:'Wind Y', val: r.vy||0 });
+            }
+            if (r.type === 'movingExit') {
+                tp.push({ key:'triggerDist', label:'Trigger Dist', val: r.triggerDist||55 });
+            }
+            if (tp.length) {
+                html += '<div style="margin-top:6px;border-top:1px solid #333;padding-top:6px;color:#f1c40f;font-size:10px;margin-bottom:4px;">Settings:</div>';
+                tp.forEach(p => {
+                    if (p.dropdown) {
+                        html += `<div class="row"><label>${p.label}:</label><select onchange="setTP('${p.key}',this.value);updateProps();render();">${p.dropdown.map(o=>`<option${String(p.val)===String(o)?' selected':''}>${o}</option>`).join('')}</select></div>`;
+                    } else {
+                        html += `<div class="row"><label>${p.label}:</label><input type="number" value="${p.val}" step="5" onchange="setTP('${p.key}',+this.value);render();"></div>`;
+                    }
+                });
+            }
+            // MovingExit Waypoints
+            if (r.type === 'movingExit' && r.positions) {
+                html += '<div style="margin-top:6px;border-top:1px solid #333;padding-top:6px;color:#2ecc71;font-size:10px;">Waypoints (last = STOP):</div>';
+                r.positions.forEach((p,pi) => {
+                    const isLast = pi === r.positions.length-1;
+                    html += `<div class="row"><label>${isLast?'STOP':'#'+(pi+1)}:</label><input type="number" value="${Math.round(p.x)}" style="width:55px" onchange="selected.ref.positions[${pi}].x=+this.value;render()"><input type="number" value="${Math.round(p.y)}" style="width:55px" onchange="selected.ref.positions[${pi}].y=+this.value;render()">
+                    ${r.positions.length>1?`<span style="color:#e74c3c;cursor:pointer;" onclick="selected.ref.positions.splice(${pi},1);updateProps();render()">X</span>`:''}</div>`;
+                });
+                html += `<button onclick="selected.ref.positions.push({x:selected.ref.positions[selected.ref.positions.length-1].x+80,y:selected.ref.positions[selected.ref.positions.length-1].y});updateProps();render();" style="width:100%;margin-top:4px;">+ Waypoint</button>`;
+            }
+        }
+
         if (selected.type !== 'player') html += `<button class="danger" onclick="deleteSelected()" style="margin-top:8px;width:100%;">Delete</button>`;
         body.innerHTML = html;
         body.querySelectorAll('input[data-prop]').forEach(inp => {
@@ -443,6 +488,13 @@
         });
     }
     function propRow(l, v) { return `<div class="row"><label>${l}:</label><input type="number" value="${Math.round(v)}" data-prop="${l.toLowerCase()}"></div>`; }
+
+    function setTP(key, val) {
+        if (!selected) return;
+        if (key === 'dir') selected.ref.dir = val;
+        else if (key === 'disguised') selected.ref.disguised = (val === 'yes');
+        else selected.ref[key] = val;
+    }
 
     function updateElementList() {
         const el = document.getElementById('elements');
