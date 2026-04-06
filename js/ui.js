@@ -54,6 +54,7 @@ function drawMenu(frameCount, highestUnlocked) {
     const menuItems = [
         { key: 'S', label: 'Speedrun', active: game.speedrunMode },
         { key: 'L', label: 'Level Select' },
+        { key: 'E', label: 'Level Editor' },
         { key: 'O', label: 'Options' },
         { key: 'M', label: 'Sound ' + (SFX.muted ? 'OFF' : 'ON') },
     ];

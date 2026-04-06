@@ -231,6 +231,12 @@ const game = {
                 SFX.menuSelect();
                 return;
             }
+            // E = Level Editor
+            if (keys['KeyE']) {
+                keys['KeyE'] = false;
+                window.open('community-editor.html', '_blank');
+                return;
+            }
             // S = Speedrun Cycle: OFF → Phase 1 → Phase 2 → ... → Hardcore → OFF
             if (keys['KeyS']) {
                 keys['KeyS'] = false;

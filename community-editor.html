@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>OH COME ON! — Level Editor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #111; color: #ccc; font-family: 'Courier New', monospace; display: flex; height: 100vh; overflow: hidden; }
+
+        #sidebar { width: 300px; background: #1a1a2e; border-right: 2px solid #333; display: flex; flex-direction: column; overflow-y: auto; }
+        #sidebar h3 { color: #2ecc71; padding: 8px 12px; border-bottom: 1px solid #333; font-size: 13px; cursor: pointer; user-select: none; }
+        #sidebar h3:hover { background: #252540; }
+        .panel { padding: 8px 12px; border-bottom: 1px solid #222; }
+        .panel.collapsed .panel-body { display: none; }
+        .panel-body { padding-top: 6px; }
+
+        .row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+        .row label { width: 80px; font-size: 11px; color: #888; flex-shrink: 0; }
+        .row input[type="number"], .row select { background: #0a0a15; color: #fff; border: 1px solid #444; padding: 3px 6px; font-family: inherit; font-size: 12px; width: 70px; }
+        .row input[type="number"]:focus, .row select:focus { border-color: #2ecc71; outline: none; }
+        .row select { width: 100%; }
+
+        button { background: #2a2a4a; color: #ccc; border: 1px solid #555; padding: 5px 10px; font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #3a3a6a; color: #fff; }
+        button.active { background: #2ecc71; color: #000; border-color: #2ecc71; }
+        button.danger { background: #8b0000; border-color: #e74c3c; }
+        button.danger:hover { background: #e74c3c; color: #fff; }
+        button.big { width: 100%; padding: 10px; font-size: 13px; font-weight: bold; }
+
+        #main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #toolbar { background: #1a1a2e; padding: 8px 15px; display: flex; gap: 10px; align-items: center; width: 100%; border-bottom: 2px solid #333; }
+        #toolbar label { font-size: 12px; color: #888; }
+
+        #canvasWrap { position: relative; margin: 15px; }
+        canvas { background: #2a2a4a; border: 2px solid #444; cursor: crosshair; }
+        #coords { position: absolute; bottom: -22px; left: 0; font-size: 11px; color: #666; }
+        #info { position: absolute; top: -22px; left: 0; font-size: 11px; color: #2ecc71; }
+
+        .tools { display: flex; gap: 4px; }
+        #elements { max-height: 200px; overflow-y: auto; }
+        .elem-item { padding: 3px 8px; font-size: 11px; cursor: pointer; border-left: 3px solid transparent; }
+        .elem-item:hover { background: #252540; }
+        .elem-item.selected { background: #2a2a5a; border-left-color: #2ecc71; }
+
+        .slot-item { background: #0a0a15; padding: 6px 10px; margin: 3px 0; border-left: 3px solid #3498db; font-size: 11px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .slot-item:hover { background: #1a1a30; }
+        .slot-item .del { color: #e74c3c; cursor: pointer; font-weight: bold; padding: 0 4px; }
+
+        textarea { background: #0a0a15; color: #ccc; border: 1px solid #444; font-family: inherit; font-size: 10px; width: 100%; resize: vertical; padding: 4px; }
+        textarea:focus { border-color: #2ecc71; outline: none; }
+
+        #testOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:#0a0a0f; }
+        #testOverlay .bar { position:absolute; top:10px; width:100%; display:flex; justify-content:space-between; padding:0 15px; z-index:10000; }
+        #testOverlay .bar div { color:#ccc; font-family:monospace; font-size:13px; background:#1a1a2e; padding:6px 14px; border-radius:4px; }
+        #testOverlay .bar .back { color:#e74c3c; border:1px solid #e74c3c; cursor:pointer; }
+
+        #shareOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; }
+        #shareBox { background:#1a1a2e; border:2px solid #2ecc71; border-radius:8px; padding:24px; width:500px; max-width:90%; }
+        #shareBox h3 { color:#2ecc71; margin-bottom:12px; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div class="panel" style="background:#0a0a15;text-align:center;padding:12px;">
+            <div style="color:#fff;font-size:18px;font-weight:bold;">OH COME ON!</div>
+            <div style="color:#2ecc71;font-size:12px;">Level Editor</div>
+        </div>
+
+        <!-- Tools -->
+        <div class="panel">
+            <div class="panel-body">
+                <div class="row">
+                    <div class="tools">
+                        <button id="toolSelect" class="active" onclick="setTool('select')">Select</button>
+                        <button id="toolAdd" onclick="setTool('add')">Add</button>
+                    </div>
+                </div>
+                <div class="row" id="addTypeRow" style="display:none;">
+                    <label>Type:</label>
+                    <select id="addType">
+                        <optgroup label="Basics">
+                            <option value="platform">Platform</option>
+                            <option value="spike">Spike</option>
+                        </optgroup>
+                        <optgroup label="Platforms">
+                            <option value="fallingFloor">Falling Floor</option>
+                            <option value="fakeFloor">Fake Floor</option>
+                            <option value="dodgingPlatform">Dodging Platform</option>
+                            <option value="trollShaker">Troll Shaker</option>
+                        </optgroup>
+                        <optgroup label="Hazards">
+                            <option value="fallingCeiling">Falling Ceiling</option>
+                            <option value="shootingSpike">Shooting Spike (hidden)</option>
+                            <option value="shootingSpikeDisguised">Shooting Spike (disguised)</option>
+                            <option value="fakeExit">Fake Exit</option>
+                            <option value="killZone">Kill Zone</option>
+                        </optgroup>
+                        <optgroup label="Zones">
+                            <option value="iceZone">Ice Zone</option>
+                            <option value="windZone">Wind Zone</option>
+                        </optgroup>
+                        <optgroup label="Special">
+                            <option value="movingExit">Moving Exit</option>
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Properties -->
+        <h3 onclick="this.nextElementSibling.classList.toggle('collapsed')">Properties</h3>
+        <div class="panel" id="propsPanel">
+            <div class="panel-body" id="propsBody">
+                <div style="color:#555;font-size:11px;">Click an element to select</div>
+            </div>
+        </div>
+
+        <!-- Elements -->
+        <h3 onclick="this.nextElementSibling.classList.toggle('collapsed')">Elements</h3>
+        <div class="panel"><div class="panel-body" id="elements"></div></div>
+
+        <!-- My Levels -->
+        <h3 onclick="this.nextElementSibling.classList.toggle('collapsed')">My Levels</h3>
+        <div class="panel">
+            <div class="panel-body">
+                <button class="big" onclick="saveLevel()" style="background:#2ecc71;color:#000;">Save Level</button>
+                <div id="levelSlots" style="margin-top:6px;"></div>
+                <button onclick="newLevel()" style="width:100%;margin-top:6px;">+ New Blank Level</button>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="panel" style="margin-top:auto;border-top:2px solid #333;">
+            <div class="panel-body">
+                <button class="big" onclick="testLevel()" style="background:#2ecc71;color:#000;">&#9654; Test Level</button>
+                <button class="big" onclick="showShare()" style="margin-top:5px;background:#3498db;color:#fff;">Share Level Code</button>
+                <button class="big" onclick="showImport()" style="margin-top:5px;">Import Level Code</button>
+                <a href="index.html" style="display:block;text-align:center;color:#888;font-size:11px;margin-top:8px;text-decoration:none;">← Back to Game</a>
+            </div>
+        </div>
+    </div>
+
+    <div id="main">
+        <div id="toolbar">
+            <label>Grid:</label>
+            <input type="checkbox" id="showGrid" checked onchange="render()">
+            <label>Snap:</label>
+            <input type="number" id="snapSize" value="5" style="width:40px;background:#0a0a15;color:#fff;border:1px solid #444;padding:2px 4px;font-family:inherit;">
+            <label>Jump Arc:</label>
+            <input type="checkbox" id="showArc" onchange="render()">
+        </div>
+        <div id="canvasWrap">
+            <canvas id="gameCanvas" width="800" height="500"></canvas>
+            <div id="coords">Mouse: (0, 0)</div>
+            <div id="info">New Level</div>
+        </div>
+    </div>
+
+    <!-- Test Overlay -->
+    <div id="testOverlay">
+        <div class="bar">
+            <div id="testInfo">TEST MODE</div>
+            <div class="back" onclick="stopTest()">ESC — Back to Editor</div>
+        </div>
+    </div>
+
+    <!-- Share Overlay -->
+    <div id="shareOverlay" onclick="if(event.target===this)this.style.display='none'">
+        <div id="shareBox">
+            <h3>Share Level</h3>
+            <p style="color:#888;font-size:12px;margin-bottom:10px;">Copy this code and share it!</p>
+            <textarea id="shareCode" rows="6" readonly onclick="this.select()"></textarea>
+            <button onclick="copyShare()" style="width:100%;margin-top:8px;padding:8px;font-size:13px;">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <!-- Import Overlay -->
+    <div id="importOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+        <div id="shareBox" style="background:#1a1a2e;border:2px solid #3498db;border-radius:8px;padding:24px;width:500px;max-width:90%;">
+            <h3 style="color:#3498db;">Import Level</h3>
+            <p style="color:#888;font-size:12px;margin-bottom:10px;">Paste a level code:</p>
+            <textarea id="importCode" rows="6" placeholder="Paste level code here..."></textarea>
+            <button onclick="doImport()" style="width:100%;margin-top:8px;padding:8px;font-size:13px;background:#3498db;color:#fff;border-color:#2980b9;">Import</button>
+        </div>
+    </div>
+
+    <!-- Stubs -->
+    <script>
+        const SFX = { muted:true, ctx:null, musicVol:100, sfxVol:100, init(){}, play(){}, tone(){},
+            setMuted(){}, applyVolumes(){}, jump(){}, land(){}, death(){}, levelComplete(){},
+            trapTrigger(){}, spikeRise(){}, exitMove(){}, wallChase(){}, menuSelect(){},
+            invertFlip(){}, bgPlaying:false, bgGain:null, startMusic(){}, stopMusic(){} };
+    </script>
+    <script src="js/engine.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/traps.js"></script>
+    <script src="js/renderer.js"></script>
+    <script>
+        const LEVELS = [];
+        const game = { levelData: null, cameraX: 0, cameraY: 0, player: null, onPlayerDeath: null };
+    </script>
+
+    <script>
+    // ================================================================
+    //  COMMUNITY LEVEL EDITOR
+    // ================================================================
+    const edCanvas = canvas;
+    const cx = ctx;
+
+    // Blank level template
+    function createBlankLevel(name) {
+        return {
+            name: name || 'My Level',
+            player: { x: 50, y: 440 },
+            exit: { x: 735, y: 420, w: 30, h: 40 },
+            platforms: [
+                { x: 0, y: 0, w: 10, h: 500 },
+                { x: 790, y: 0, w: 10, h: 500 },
+                { x: 0, y: 0, w: 800, h: 10 },
+                { x: 10, y: 470, w: 780, h: 30 },
+            ],
+            spikes: [],
+            traps: [],
+        };
+    }
+
+    let currentLvl = createBlankLevel();
+    let selected = null;
+    let tool = 'select';
+    let dragging = false;
+    let dragOffX = 0, dragOffY = 0;
+    let mouseX = 0, mouseY = 0;
+    let testRunning = false;
+    let testPlayer = null;
+    let testState = 'playing';
+    let testRespawn = 0;
+    let testDeaths = 0;
+    let testAnimId = null;
+    let preTestState = null;
+    const TARGET_FPS = 144;
+    const FIXED_DT = 1000 / TARGET_FPS;
+    let testLastTime = 0;
+    let testAccum = 0;
+    let lastClickHits = [];
+    let cycleIndex = 0;
+
+    // ── TOAST ─────────────────────────────────────────────
+    function showToast(msg) {
+        let toast = document.getElementById('toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast';
+            toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#2ecc71;color:#000;padding:10px 24px;border-radius:6px;font-family:monospace;font-size:14px;font-weight:bold;z-index:99999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+    }
+
+    // ── TOOL ──────────────────────────────────────────────
+    function setTool(t) {
+        tool = t;
+        document.querySelectorAll('.tools button').forEach(b => b.classList.remove('active'));
+        document.getElementById('tool' + t.charAt(0).toUpperCase() + t.slice(1)).classList.add('active');
+        document.getElementById('addTypeRow').style.display = t === 'add' ? 'flex' : 'none';
+        edCanvas.style.cursor = t === 'select' ? 'default' : 'copy';
+    }
+
+    function snap(v) { const s = +document.getElementById('snapSize').value || 1; return Math.round(v / s) * s; }
+
+    function screenToWorld(sx, sy) {
+        const rect = edCanvas.getBoundingClientRect();
+        return { x: (sx - rect.left) * (800 / rect.width), y: (sy - rect.top) * (500 / rect.height) };
+    }
+
+    // ── HIT TEST ──────────────────────────────────────────
+    function hitTestAll(wx, wy) {
+        const lvl = currentLvl;
+        const hits = [];
+        for (let i = lvl.spikes.length-1; i >= 0; i--) {
+            const s = lvl.spikes[i];
+            if (wx >= s.x && wx <= s.x+s.w && wy >= s.y && wy <= s.y+s.h) hits.push({ type:'spike', index:i, ref:s });
+        }
+        const ps = lvl.player;
+        if (wx >= ps.x && wx <= ps.x+20 && wy >= ps.y && wy <= ps.y+20) hits.push({ type:'player', index:0, ref:ps });
+        if (lvl.exit) { const e = lvl.exit; if (wx >= e.x && wx <= e.x+e.w && wy >= e.y && wy <= e.y+e.h) hits.push({ type:'exit', index:0, ref:e }); }
+        const trapsBySize = [...lvl.traps.entries()].filter(([i,t]) => t.x !== undefined && t.w !== undefined);
+        trapsBySize.sort((a,b) => (a[1].w*a[1].h) - (b[1].w*b[1].h));
+        for (const [i,t] of trapsBySize) {
+            if (wx >= t.x && wx <= t.x+t.w && wy >= t.y && wy <= t.y+t.h) hits.push({ type:'trap', index:i, ref:t });
+        }
+        const platsBySize = [...lvl.platforms.entries()];
+        platsBySize.sort((a,b) => (a[1].w*a[1].h) - (b[1].w*b[1].h));
+        for (const [i,p] of platsBySize) {
+            if (wx >= p.x && wx <= p.x+p.w && wy >= p.y && wy <= p.y+p.h) hits.push({ type:'platform', index:i, ref:p });
+        }
+        return hits;
+    }
+
+    // ── MOUSE EVENTS ──────────────────────────────────────
+    edCanvas.addEventListener('mousemove', (e) => {
+        if (testRunning) return;
+        const w = screenToWorld(e.clientX, e.clientY);
+        mouseX = w.x; mouseY = w.y;
+        document.getElementById('coords').textContent = `Mouse: (${Math.round(w.x)}, ${Math.round(w.y)})`;
+        if (dragging && selected && tool === 'select') {
+            selected.ref.x = snap(w.x - dragOffX);
+            selected.ref.y = snap(w.y - dragOffY);
+            if (selected.ref.origX !== undefined) selected.ref.origX = selected.ref.x;
+            if (selected.ref.origY !== undefined) selected.ref.origY = selected.ref.y;
+            updateProps();
+        }
+        render();
+    });
+
+    edCanvas.addEventListener('mousedown', (e) => {
+        if (testRunning) return;
+        const w = screenToWorld(e.clientX, e.clientY);
+        if (tool === 'select') {
+            const hits = hitTestAll(w.x, w.y);
+            if (hits.length > 1) {
+                const sameSpot = lastClickHits.length === hits.length && hits.every((h,i) => lastClickHits[i] && h.type === lastClickHits[i].type && h.index === lastClickHits[i].index);
+                if (sameSpot) cycleIndex = (cycleIndex+1) % hits.length;
+                else { cycleIndex = 0; lastClickHits = hits; }
+                selected = hits[cycleIndex];
+            } else { selected = hits[0] || null; lastClickHits = hits; cycleIndex = 0; }
+            if (selected) {
+                if (e.altKey && selected.type !== 'player' && selected.type !== 'exit') {
+                    const lvl = currentLvl;
+                    if (selected.type === 'platform') { const c = {...selected.ref}; lvl.platforms.push(c); selected = {type:'platform',index:lvl.platforms.length-1,ref:c}; }
+                    else if (selected.type === 'spike') { const c = {...selected.ref}; lvl.spikes.push(c); selected = {type:'spike',index:lvl.spikes.length-1,ref:c}; }
+                    else if (selected.type === 'trap') { const c = cloneTrap(selected.ref,0,0); lvl.traps.push(c); selected = {type:'trap',index:lvl.traps.length-1,ref:c}; }
+                    updateElementList();
+                }
+                dragging = true; dragOffX = w.x - selected.ref.x; dragOffY = w.y - selected.ref.y;
+            }
+            updateProps(); updateElementList();
+        } else if (tool === 'add') {
+            addElement(snap(w.x), snap(w.y));
+        }
+        render();
+    });
+
+    edCanvas.addEventListener('mouseup', () => { if (testRunning) return; dragging = false; render(); });
+
+    // ── KEYBOARD ──────────────────────────────────────────
+    window.addEventListener('keydown', (e) => {
+        if (testRunning) { if (e.code === 'Escape') { e.preventDefault(); stopTest(); } return; }
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.code === 'Delete' && selected) { e.preventDefault(); deleteSelected(); }
+        if (e.code === 'Escape') { selected = null; updateProps(); render(); }
+        if (selected && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) {
+            e.preventDefault();
+            const s = e.shiftKey ? 1 : (+document.getElementById('snapSize').value || 5);
+            if (e.code === 'ArrowLeft') selected.ref.x -= s;
+            if (e.code === 'ArrowRight') selected.ref.x += s;
+            if (e.code === 'ArrowUp') selected.ref.y -= s;
+            if (e.code === 'ArrowDown') selected.ref.y += s;
+            updateProps(); render();
+        }
+    });
+
+    // ── CLONE TRAP ────────────────────────────────────────
+    function cloneTrap(t, ox, oy) {
+        const x = (t.x||0)+ox, y = (t.y||0)+oy;
+        switch(t.type) {
+            case 'fallingFloor': return new FallingFloor(x,y,t.w,t.h);
+            case 'fakeFloor': return new FakeFloor(x,y,t.w,t.h);
+            case 'dodgingPlatform': return new DodgingPlatform(x,y,t.w,t.h,t.dodgeX||x+100,t.triggerRange||80);
+            case 'trollShaker': return new TrollShaker(x,y,t.w,t.h);
+            case 'fallingCeiling': return new FallingCeiling(x,y,t.w,t.h,t.triggerX||x);
+            case 'shootingSpike': case 'shootingSpikeDisguised': return new ShootingSpike(x,y,t.dir||-1,t.triggerX||x,t.speed||4,null,null,t.disguised||false);
+            case 'fakeExit': return new FakeExit(x,y);
+            case 'killZone': return new KillZone(x,y,t.w||50,t.h||50);
+            case 'iceZone': return new IceZone(x,y,t.w||150,t.h||50);
+            case 'windZone': return new WindZone(x,y,t.w||100,t.h||100,t.vx||0,t.vy||0);
+            case 'movingExit': return new MovingExit(t.positions?t.positions.map(p=>({x:p.x+ox,y:p.y+oy})):[{x,y}]);
+            default: return { x,y,w:t.w||30,h:t.h||20,type:t.type||'unknown',update(){},draw(){ctx.fillStyle='#f1c40f';ctx.globalAlpha=0.5;ctx.fillRect(this.x,this.y,this.w,this.h);ctx.globalAlpha=1;},reset(){} };
+        }
+    }
+
+    // ── ADD / DELETE ──────────────────────────────────────
+    function addElement(x, y) {
+        const type = document.getElementById('addType').value;
+        if (type === 'platform') currentLvl.platforms.push({x,y,w:100,h:20});
+        else if (type === 'spike') currentLvl.spikes.push({x,y,w:20,h:20,dir:'up'});
+        else {
+            let trap;
+            switch(type) {
+                case 'fallingFloor': trap = new FallingFloor(x,y,100,20); break;
+                case 'fakeFloor': trap = new FakeFloor(x,y,100,20); break;
+                case 'dodgingPlatform': trap = new DodgingPlatform(x,y,110,20,x+150,80); break;
+                case 'trollShaker': trap = new TrollShaker(x,y,100,20); break;
+                case 'fallingCeiling': trap = new FallingCeiling(x,y,60,30,x+30); break;
+                case 'shootingSpike': trap = new ShootingSpike(x,y,'left',x-100,4); break;
+                case 'shootingSpikeDisguised': trap = new ShootingSpike(x,y,'left',x-100,4,null,null,true); break;
+                case 'fakeExit': trap = new FakeExit(x,y); break;
+                case 'killZone': trap = new KillZone(x,y,50,50); break;
+                case 'iceZone': trap = new IceZone(x,y,150,50); break;
+                case 'windZone': trap = new WindZone(x,y,100,100,0.5,0); break;
+                case 'movingExit': trap = new MovingExit([{x,y:y-20}]); break;
+            }
+            if (trap) currentLvl.traps.push(trap);
+        }
+        updateElementList(); render();
+    }
+
+    function deleteSelected() {
+        if (!selected) return;
+        if (selected.type === 'platform') currentLvl.platforms.splice(selected.index,1);
+        else if (selected.type === 'spike') currentLvl.spikes.splice(selected.index,1);
+        else if (selected.type === 'trap') currentLvl.traps.splice(selected.index,1);
+        else if (selected.type === 'exit') currentLvl.exit = null;
+        selected = null; updateProps(); updateElementList(); render();
+    }
+
+    // ── PROPERTIES ────────────────────────────────────────
+    function updateProps() {
+        const body = document.getElementById('propsBody');
+        if (!selected) { body.innerHTML = '<div style="color:#555;font-size:11px;">Click an element to select</div>'; return; }
+        const r = selected.ref;
+        let html = `<div style="color:#2ecc71;font-size:12px;margin-bottom:6px;">${(selected.type + (r.type ? ' ('+r.type+')' : '')).toUpperCase()}</div>`;
+        html += propRow('X', r.x); html += propRow('Y', r.y);
+        if (r.w !== undefined) html += propRow('W', r.w);
+        if (r.h !== undefined) html += propRow('H', r.h);
+        if (r.dir !== undefined && selected.type === 'spike') {
+            html += `<div class="row"><label>Dir:</label><select onchange="selected.ref.dir=this.value;render()">
+                <option ${r.dir==='up'?'selected':''}>up</option><option ${r.dir==='down'?'selected':''}>down</option>
+                <option ${r.dir==='left'?'selected':''}>left</option><option ${r.dir==='right'?'selected':''}>right</option></select></div>`;
+        }
+        if (selected.type !== 'player') html += `<button class="danger" onclick="deleteSelected()" style="margin-top:8px;width:100%;">Delete</button>`;
+        body.innerHTML = html;
+        body.querySelectorAll('input[data-prop]').forEach(inp => {
+            inp.onchange = () => { selected.ref[inp.dataset.prop] = +inp.value; render(); };
+        });
+    }
+    function propRow(l, v) { return `<div class="row"><label>${l}:</label><input type="number" value="${Math.round(v)}" data-prop="${l.toLowerCase()}"></div>`; }
+
+    function updateElementList() {
+        const el = document.getElementById('elements');
+        const lvl = currentLvl;
+        let html = `<div class="elem-item" style="color:#3498db" onclick="selectByRef('player')">Player (${lvl.player.x}, ${lvl.player.y})</div>`;
+        if (lvl.exit) html += `<div class="elem-item" style="color:#2ecc71" onclick="selectByRef('exit')">Exit (${lvl.exit.x}, ${lvl.exit.y})</div>`;
+        lvl.platforms.forEach((p,i) => html += `<div class="elem-item${selected&&selected.type==='platform'&&selected.index===i?' selected':''}" style="color:#d0d0d0" onclick="selectByIdx('platform',${i})">${p.w<=10&&p.h>=400?'Wall':'Platform'} (${p.x},${p.y})</div>`);
+        lvl.spikes.forEach((s,i) => html += `<div class="elem-item${selected&&selected.type==='spike'&&selected.index===i?' selected':''}" style="color:#e74c3c" onclick="selectByIdx('spike',${i})">Spike ${s.dir} (${s.x},${s.y})</div>`);
+        lvl.traps.forEach((t,i) => html += `<div class="elem-item${selected&&selected.type==='trap'&&selected.index===i?' selected':''}" style="color:#f1c40f" onclick="selectByIdx('trap',${i})">${t.type} (${Math.round(t.x)},${Math.round(t.y)})</div>`);
+        el.innerHTML = html;
+    }
+    function selectByRef(type) { selected = { type, index:0, ref: type==='player'?currentLvl.player:currentLvl.exit }; updateProps(); updateElementList(); render(); }
+    function selectByIdx(type, i) { const arr = type==='platform'?currentLvl.platforms:type==='spike'?currentLvl.spikes:currentLvl.traps; selected={type,index:i,ref:arr[i]}; updateProps(); updateElementList(); render(); }
+
+    // ── SAVE / LOAD LEVELS ────────────────────────────────
+    function serializeLevel(lvl) {
+        return JSON.stringify({
+            name: lvl.name,
+            player: lvl.player,
+            exit: lvl.exit,
+            platforms: lvl.platforms,
+            spikes: lvl.spikes,
+            traps: lvl.traps.map(t => {
+                const d = { type:t.type, x:t.x, y:t.y, w:t.w, h:t.h };
+                if (t.triggerX !== undefined) d.triggerX = t.triggerX;
+                if (t.triggerDist !== undefined) d.triggerDist = t.triggerDist;
+                if (t.triggerMode) d.triggerMode = t.triggerMode;
+                if (t.triggerArea) d.triggerArea = t.triggerArea;
+                if (t.speed !== undefined) d.speed = t.speed;
+                if (t.dir !== undefined) d.dir = t.dir;
+                if (t.disguised) d.disguised = true;
+                if (t.dodgeX !== undefined) d.dodgeX = t.dodgeX;
+                if (t.triggerRange !== undefined) d.triggerRange = t.triggerRange;
+                if (t.vx !== undefined) d.vx = t.vx;
+                if (t.vy !== undefined) d.vy = t.vy;
+                if (t.positions) d.positions = t.positions;
+                return d;
+            }),
+        });
+    }
+
+    function deserializeLevel(json) {
+        const d = JSON.parse(json);
+        return {
+            name: d.name || 'Imported',
+            player: d.player,
+            exit: d.exit,
+            platforms: d.platforms,
+            spikes: d.spikes,
+            traps: (d.traps || []).map(td => {
+                const trap = cloneTrap(td, 0, 0);
+                for (const k in td) { if (k !== 'type' && typeof td[k] !== 'object') trap[k] = td[k]; }
+                if (td.positions) trap.positions = JSON.parse(JSON.stringify(td.positions));
+                if (td.triggerArea) trap.triggerArea = JSON.parse(JSON.stringify(td.triggerArea));
+                return trap;
+            }),
+        };
+    }
+
+    function getSavedLevels() {
+        try { return JSON.parse(localStorage.getItem('community_levels') || '{}'); } catch(e) { return {}; }
+    }
+
+    function saveLevel() {
+        const name = prompt('Level name:', currentLvl.name || 'My Level');
+        if (!name) return;
+        currentLvl.name = name;
+        const saved = getSavedLevels();
+        saved[name] = serializeLevel(currentLvl);
+        localStorage.setItem('community_levels', JSON.stringify(saved));
+        updateSlots();
+        showToast('Level "' + name + '" saved!');
+    }
+
+    function loadLevel(name) {
+        const saved = getSavedLevels();
+        if (!saved[name]) return;
+        currentLvl = deserializeLevel(saved[name]);
+        selected = null;
+        updateProps(); updateElementList(); render();
+        document.getElementById('info').textContent = currentLvl.name;
+        showToast('Level "' + name + '" loaded!');
+    }
+
+    function deleteSavedLevel(name) {
+        const saved = getSavedLevels();
+        delete saved[name];
+        localStorage.setItem('community_levels', JSON.stringify(saved));
+        updateSlots();
+    }
+
+    function newLevel() {
+        const name = prompt('Level name:', 'My Level');
+        if (!name) return;
+        currentLvl = createBlankLevel(name);
+        selected = null;
+        updateProps(); updateElementList(); render();
+        document.getElementById('info').textContent = name;
+    }
+
+    function updateSlots() {
+        const el = document.getElementById('levelSlots');
+        const saved = getSavedLevels();
+        const names = Object.keys(saved);
+        if (!names.length) { el.innerHTML = '<div style="color:#555;font-size:11px;">No saved levels</div>'; return; }
+        el.innerHTML = names.map(n => `<div class="slot-item" onclick="loadLevel('${n}')"><span>${n}</span><span class="del" onclick="event.stopPropagation();deleteSavedLevel('${n}')">X</span></div>`).join('');
+    }
+
+    // ── SHARE / IMPORT ────────────────────────────────────
+    function showShare() {
+        const json = serializeLevel(currentLvl);
+        const code = btoa(unescape(encodeURIComponent(json)));
+        document.getElementById('shareCode').value = code;
+        document.getElementById('shareOverlay').style.display = 'flex';
+    }
+
+    function copyShare() {
+        navigator.clipboard.writeText(document.getElementById('shareCode').value);
+        showToast('Code copied!');
+        document.getElementById('shareOverlay').style.display = 'none';
+    }
+
+    function showImport() {
+        document.getElementById('importCode').value = '';
+        document.getElementById('importOverlay').style.display = 'flex';
+    }
+
+    function doImport() {
+        try {
+            const code = document.getElementById('importCode').value.trim();
+            const json = decodeURIComponent(escape(atob(code)));
+            currentLvl = deserializeLevel(json);
+            selected = null;
+            updateProps(); updateElementList(); render();
+            document.getElementById('info').textContent = currentLvl.name;
+            document.getElementById('importOverlay').style.display = 'none';
+            showToast('Level imported!');
+        } catch(e) {
+            alert('Invalid level code!');
+        }
+    }
+
+    // ── RENDER ────────────────────────────────────────────
+    function render() {
+        const lvl = currentLvl;
+        edCanvas.width = 800; edCanvas.height = 500;
+        cx.fillStyle = '#2a2a4a'; cx.fillRect(0,0,800,500);
+
+        // Grid
+        if (document.getElementById('showGrid').checked) {
+            cx.strokeStyle = 'rgba(255,255,255,0.06)'; cx.lineWidth = 0.5;
+            for (let x=0;x<=800;x+=50) { cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,500); cx.stroke(); }
+            for (let y=0;y<=500;y+=50) { cx.beginPath(); cx.moveTo(0,y); cx.lineTo(800,y); cx.stroke(); }
+            cx.fillStyle = 'rgba(255,255,255,0.15)'; cx.font = '9px monospace';
+            for (let x=0;x<=800;x+=100) cx.fillText(x,x+2,10);
+            for (let y=100;y<=500;y+=100) cx.fillText(y,2,y-2);
+        }
+
+        // Platforms
+        lvl.platforms.forEach((p,i) => {
+            const isSel = selected&&selected.type==='platform'&&selected.index===i;
+            cx.fillStyle = isSel?'#fff':'#d0d0d0'; cx.fillRect(p.x,p.y,p.w,p.h);
+            cx.fillStyle = isSel?'#2ecc71':'#e8e8e8'; cx.fillRect(p.x,p.y,p.w,3);
+            if (isSel) { cx.strokeStyle='#2ecc71'; cx.lineWidth=2; cx.strokeRect(p.x-1,p.y-1,p.w+2,p.h+2); }
+        });
+
+        // Traps
+        lvl.traps.forEach((t,i) => {
+            if (t.x === undefined) return;
+            const isSel = selected&&selected.type==='trap'&&selected.index===i;
+            let color = '#f1c40f';
+            if (t.type==='fallingFloor') color='#e67e22';
+            else if (t.type==='fakeFloor') color='#9b59b6';
+            else if (t.type==='fakeExit') color='#c0392b';
+            else if (t.type==='iceZone') color='#3498db';
+            else if (t.type==='dodgingPlatform') color='#1abc9c';
+            else if (t.type==='shootingSpike') color='#e74c3c';
+
+            if (t.type==='shootingSpike') {
+                cx.fillStyle='#e74c3c'; cx.globalAlpha=0.8;
+                const d=t.dir, sDir=(d==='right'||d===1)?'right':(d==='up')?'up':(d==='down')?'down':'left';
+                cx.beginPath();
+                if (sDir==='right') { cx.moveTo(t.x,t.y); cx.lineTo(t.x+t.w,t.y+t.h/2); cx.lineTo(t.x,t.y+t.h); }
+                else if (sDir==='left') { cx.moveTo(t.x+t.w,t.y); cx.lineTo(t.x,t.y+t.h/2); cx.lineTo(t.x+t.w,t.y+t.h); }
+                else if (sDir==='up') { cx.moveTo(t.x,t.y+t.h); cx.lineTo(t.x+t.w/2,t.y); cx.lineTo(t.x+t.w,t.y+t.h); }
+                else { cx.moveTo(t.x,t.y); cx.lineTo(t.x+t.w/2,t.y+t.h); cx.lineTo(t.x+t.w,t.y); }
+                cx.closePath(); cx.fill();
+                if (t.disguised) { cx.fillStyle='#f1c40f'; cx.font='bold 8px monospace'; cx.fillText('D',t.x+t.w/2-3,t.y+t.h+10); }
+                cx.globalAlpha=1;
+            } else {
+                cx.fillStyle=color; cx.globalAlpha=0.5; cx.fillRect(t.x,t.y,t.w,t.h); cx.globalAlpha=1;
+            }
+            cx.strokeStyle=isSel?'#2ecc71':color; cx.lineWidth=isSel?2:1;
+            cx.setLineDash([4,3]); cx.strokeRect(t.x,t.y,t.w,t.h); cx.setLineDash([]);
+            cx.fillStyle=color; cx.font='9px monospace'; cx.fillText(t.type||'trap',t.x+2,t.y-3);
+        });
+
+        // Spikes
+        lvl.spikes.forEach((s,i) => {
+            const isSel = selected&&selected.type==='spike'&&selected.index===i;
+            cx.fillStyle = isSel?'#ff6b6b':'#e74c3c';
+            cx.beginPath();
+            if (s.dir==='up') { cx.moveTo(s.x,s.y+s.h); cx.lineTo(s.x+s.w/2,s.y); cx.lineTo(s.x+s.w,s.y+s.h); }
+            else if (s.dir==='down') { cx.moveTo(s.x,s.y); cx.lineTo(s.x+s.w/2,s.y+s.h); cx.lineTo(s.x+s.w,s.y); }
+            else if (s.dir==='left') { cx.moveTo(s.x+s.w,s.y); cx.lineTo(s.x,s.y+s.h/2); cx.lineTo(s.x+s.w,s.y+s.h); }
+            else { cx.moveTo(s.x,s.y); cx.lineTo(s.x+s.w,s.y+s.h/2); cx.lineTo(s.x,s.y+s.h); }
+            cx.closePath(); cx.fill();
+            if (isSel) { cx.strokeStyle='#2ecc71'; cx.lineWidth=2; cx.strokeRect(s.x-1,s.y-1,s.w+2,s.h+2); }
+        });
+
+        // Exit
+        if (lvl.exit) {
+            const e=lvl.exit, isSel=selected&&selected.type==='exit';
+            cx.fillStyle='rgba(46,204,113,0.2)'; cx.fillRect(e.x-4,e.y-4,e.w+8,e.h+8);
+            cx.fillStyle=isSel?'#2ecc71':'#27ae60'; cx.fillRect(e.x,e.y,e.w,e.h);
+            cx.strokeStyle='#2ecc71'; cx.lineWidth=isSel?3:2; cx.strokeRect(e.x,e.y,e.w,e.h);
+            cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.fillText('EXIT',e.x,e.y-4);
+        }
+
+        // Player
+        const ps=lvl.player, isSel=selected&&selected.type==='player';
+        cx.fillStyle=isSel?'#5dade2':'#3498db'; cx.fillRect(ps.x,ps.y,20,20);
+        cx.strokeStyle=isSel?'#2ecc71':'#2980b9'; cx.lineWidth=isSel?3:2; cx.strokeRect(ps.x,ps.y,20,20);
+        cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.fillText('START',ps.x,ps.y-4);
+
+        // Jump arc
+        if (document.getElementById('showArc').checked) {
+            drawJumpArc(ps.x+10, ps.y);
+            if (selected && selected.ref.w) { drawJumpArc(selected.ref.x,selected.ref.y); drawJumpArc(selected.ref.x+selected.ref.w,selected.ref.y); }
+        }
+    }
+
+    function drawJumpArc(sx, sy) {
+        cx.strokeStyle='rgba(46,204,113,0.4)'; cx.lineWidth=1.5; cx.setLineDash([3,3]);
+        [1,-1].forEach(dir => {
+            cx.beginPath(); let vy=CFG.jumpForce, x=sx, y=sy; cx.moveTo(x,y);
+            for (let f=0;f<80;f++) { vy+=CFG.gravity; x+=CFG.moveSpeed*dir; y+=vy; cx.lineTo(x,y); if(y>sy+10)break; }
+            cx.stroke();
+        });
+        cx.setLineDash([]);
+    }
+
+    // ── TEST MODE ─────────────────────────────────────────
+    function testLevel() {
+        const lvl = currentLvl;
+        game.levelData = lvl; game.cameraX = 0; game.cameraY = 0;
+        preTestState = lvl.traps.map(t => { const s={}; for(const k in t) if(typeof t[k]!=='function') s[k]=t[k]; return s; });
+        edCanvas.width=800; edCanvas.height=500;
+        const maxW=window.innerWidth*0.9, maxH=window.innerHeight*0.9, ratio=800/500;
+        let w,h; if(maxW/maxH>ratio){h=maxH;w=h*ratio;}else{w=maxW;h=w/ratio;}
+        edCanvas.style.cssText=`position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:${w}px;height:${h}px;z-index:9999;border-radius:4px;`;
+        document.getElementById('testOverlay').appendChild(edCanvas);
+        document.getElementById('testOverlay').style.display='block';
+
+        testPlayer = new Player(lvl.player.x, lvl.player.y);
+        testPlayer.gDir = lvl.gravityDir || 1;
+        game.player = testPlayer;
+        testState='playing'; testDeaths=0; testRespawn=0; testLastTime=0; testAccum=0;
+        lvl.traps.forEach(t=>t.reset());
+        game.onPlayerDeath = () => { testDeaths++; testState='dead'; testRespawn=CFG.respawnDelay; };
+        testRunning = true;
+        document.getElementById('testInfo').textContent = `TEST — "${lvl.name}" | Deaths: 0 | R = Restart | ESC = Back`;
+        requestAnimationFrame(testLoop);
+    }
+
+    function stopTest() {
+        testRunning=false;
+        document.getElementById('testOverlay').style.display='none';
+        if(testAnimId)cancelAnimationFrame(testAnimId);
+        game.onPlayerDeath=null;
+        if(preTestState){const traps=currentLvl.traps;preTestState.forEach((s,i)=>{if(traps[i])for(const k in s)traps[i][k]=s[k];});preTestState=null;}
+        document.getElementById('canvasWrap').appendChild(edCanvas);
+        edCanvas.style.cssText=''; render();
+    }
+
+    function testLoop(time) {
+        if(!testRunning)return;
+        testAnimId=requestAnimationFrame(testLoop);
+        if(!testLastTime)testLastTime=time;
+        const elapsed=Math.min(time-testLastTime,100); testLastTime=time; testAccum+=elapsed;
+        while(testAccum>=FIXED_DT){testUpdate();testAccum-=FIXED_DT;}
+        testDraw();
+    }
+
+    function testUpdate() {
+        const lvl=currentLvl; game.levelData=lvl;
+        if(keys['Escape']){keys['Escape']=false;stopTest();return;}
+        if(keys['KeyR']&&testState==='playing'){testPlayer.die();return;}
+        if(testState==='dead'){testRespawn--;if(testRespawn<=0){testPlayer.reset();lvl.traps.forEach(t=>t.reset());testState='playing';}return;}
+        const plats=[...lvl.platforms];
+        ['fallingFloor','trollShaker','dodgingPlatform','togglePlatform','movingPlatform'].forEach(type=>{lvl.traps.forEach(t=>{if(t.solid&&t.type===type)plats.push(t);});});
+        testPlayer.update(plats);
+        lvl.traps.forEach(t=>t.update(testPlayer));
+        for(const s of lvl.spikes){if(testPlayer.alive){const h={x:s.x+3,y:s.y+3,w:s.w-6,h:s.h-6};if(aabb(testPlayer,h))testPlayer.die();}}
+        if(testPlayer.alive){
+            const exits=[];
+            if(lvl.exit)exits.push(lvl.exit);
+            const me=lvl.traps.find(t=>t.type==='movingExit');
+            if(me&&!me.moving&&me.getBounds)exits.push(me.getBounds());
+            for(const eb of exits){if(aabb(testPlayer,eb)){document.getElementById('testInfo').textContent=`LEVEL COMPLETE! Deaths: ${testDeaths} | R = Restart | ESC = Editor`;testPlayer.reset();lvl.traps.forEach(t=>t.reset());testState='playing';break;}}
+        }
+        document.getElementById('testInfo').textContent=`TEST — "${lvl.name}" | Deaths: ${testDeaths} | R = Restart | ESC = Back`;
+    }
+
+    function testDraw() {
+        const lvl=currentLvl;
+        ctx.save(); applyShake();
+        ctx.fillStyle='#2a2a4a'; ctx.fillRect(0,0,800,500);
+        ctx.save();
+        lvl.platforms.forEach(p=>drawPlatform(p));
+        lvl.traps.forEach(t=>{if(t.type!=='darknessOverlay')t.draw();});
+        lvl.spikes.forEach(s=>drawSpike(s));
+        if(lvl.exit)drawExit(lvl.exit);
+        testPlayer.draw();
+        updateParticles();
+        ctx.restore(); ctx.restore();
+    }
+
+    // ── INIT ──────────────────────────────────────────────
+    updateSlots(); updateElementList(); render();
+    </script>
+</body>
+</html>
