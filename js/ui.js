@@ -78,8 +78,6 @@ function drawMenu(frameCount, highestUnlocked) {
         ctx.textAlign = 'center';
     }
 
-    ctx.font = '50px serif';
-    ctx.fillText('>:)', W / 2, 488);
     ctx.textAlign = 'left';
 }
 
