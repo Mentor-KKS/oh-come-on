@@ -14,6 +14,8 @@ class Player {
         this.vy = 0;
         this.extVx = 0;
         this.extVy = 0;
+        this.prevX = x;
+        this.prevY = y;
         this.grounded = false;
         this.coyote = 0;
         this.jumpPressed = false;
@@ -30,6 +32,8 @@ class Player {
         this.vy = 0;
         this.extVx = 0;
         this.extVy = 0;
+        this.prevX = this.x;
+        this.prevY = this.y;
         this.grounded = false;
         this.coyote = 0;
         this.alive = true;
@@ -51,6 +55,8 @@ class Player {
 
     update(platforms) {
         if (!this.alive) return;
+        this.prevX = this.x;
+        this.prevY = this.y;
 
         // noLeft: Links drücken = sofortiger Tod
         if (game.levelData && game.levelData.noLeft && isLeft()) {
@@ -86,7 +92,9 @@ class Player {
                 this.vx = game.levelData.autoRun;
                 this.facingRight = true;
             } else {
-                const inv = game.levelData && game.levelData.invertControls;
+                const zoneInvert = game.levelData && game.levelData.traps &&
+                    game.levelData.traps.some(t => t.type === 'invertZone' && t.mode !== 'line' && t.contains && t.contains(this));
+                const inv = game.levelData && (game.levelData.invertControls || zoneInvert);
                 const goLeft = inv ? isRight() : isLeft();
                 const goRight = inv ? isLeft() : isRight();
                 const maxSpd = this.onIce ? CFG.moveSpeed * 2.5 : CFG.moveSpeed;

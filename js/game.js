@@ -166,6 +166,19 @@ const game = {
         return null;
     },
 
+    isExitVisible(exitObj) {
+        if (!exitObj || !this.player) return false;
+        if (exitObj.showAboveY && this.player.y >= exitObj.showAboveY) return false;
+        if (exitObj.showBelowX && this.player.x >= exitObj.showBelowX) return false;
+        if (exitObj.revealArea) {
+            const px = this.player.x + this.player.w / 2;
+            const py = this.player.y + this.player.h / 2;
+            const a = exitObj.revealArea;
+            return px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h;
+        }
+        return true;
+    },
+
     getAllPlatforms() {
         const lvl = this.levelData;
         const plats = [...lvl.platforms];
@@ -415,12 +428,7 @@ const game = {
         if (this.player.alive) {
             const exits = [];
             const ex = this.levelData.exit;
-            if (ex) {
-                let show = true;
-                if (ex.showAboveY && this.player.y >= ex.showAboveY) show = false;
-                if (ex.showBelowX && this.player.x >= ex.showBelowX) show = false;
-                if (show) exits.push(ex);
-            }
+            if (ex && this.isExitVisible(ex)) exits.push(ex);
             const movExit = this.levelData.traps.find(t => t.type === 'movingExit');
             // MovingExit nur erreichbar wenn er STEHT (nicht während Flucht)
             if (movExit && !movExit.moving) exits.push(movExit.getBounds());
@@ -490,10 +498,7 @@ const game = {
         lvl.traps.forEach(t => { if (t.type !== 'darknessOverlay') t.draw(); });
         lvl.spikes.forEach(s => drawSpike(s));
         if (lvl.exit) {
-            let show = true;
-            if (lvl.exit.showAboveY && this.player.y >= lvl.exit.showAboveY) show = false;
-            if (lvl.exit.showBelowX && this.player.x >= lvl.exit.showBelowX) show = false;
-            if (show) drawExit(lvl.exit);
+            if (this.isExitVisible(lvl.exit)) drawExit(lvl.exit);
         }
         // Shadow-Exit (nur visuell, kein Level-Complete-Check)
         if (lvl.shadowExit) drawExit(lvl.shadowExit);
@@ -593,6 +598,9 @@ if (testLevel !== null) {
                     if (data.exit && lvl.exit) {
                         lvl.exit.x = data.exit.x; lvl.exit.y = data.exit.y;
                         lvl.exit.w = data.exit.w; lvl.exit.h = data.exit.h;
+                        lvl.exit.showAboveY = data.exit.showAboveY;
+                        lvl.exit.showBelowX = data.exit.showBelowX;
+                        lvl.exit.revealArea = data.exit.revealArea ? { ...data.exit.revealArea } : undefined;
                     }
                     // Platforms
                     data.platforms.forEach((p, i) => {

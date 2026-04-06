@@ -113,9 +113,15 @@ class FallingCeiling {
     checkTrigger(player) {
         const px = player.x + player.w / 2;
         const py = player.y + player.h / 2;
+        const prevPx = (player.prevX ?? player.x) + player.w / 2;
+        const prevPy = (player.prevY ?? player.y) + player.h / 2;
         switch (this.triggerMode) {
-            case 'x': return Math.abs(px - this.triggerX) < 40;
-            case 'y': return Math.abs(py - this.triggerY) < 40;
+            case 'x':
+                return (prevPx <= this.triggerX && px > this.triggerX) ||
+                    (prevPx >= this.triggerX && px < this.triggerX);
+            case 'y':
+                return (prevPy <= this.triggerY && py > this.triggerY) ||
+                    (prevPy >= this.triggerY && py < this.triggerY);
             case 'proximity': {
                 const dx = px - (this.x + this.w/2);
                 const dy = py - (this.y + this.h/2);
@@ -299,9 +305,15 @@ class ShootingSpike {
     checkTrigger(player) {
         const px = player.x + player.w / 2;
         const py = player.y + player.h / 2;
+        const prevPx = (player.prevX ?? player.x) + player.w / 2;
+        const prevPy = (player.prevY ?? player.y) + player.h / 2;
         switch (this.triggerMode) {
-            case 'x': return Math.abs(px - this.triggerX) < 50;
-            case 'y': return Math.abs(py - this.triggerY) < 50;
+            case 'x':
+                return (prevPx <= this.triggerX && px > this.triggerX) ||
+                    (prevPx >= this.triggerX && px < this.triggerX);
+            case 'y':
+                return (prevPy <= this.triggerY && py > this.triggerY) ||
+                    (prevPy >= this.triggerY && py < this.triggerY);
             case 'proximity': {
                 const dx = px - (this.x + this.w/2);
                 const dy = py - (this.y + this.h/2);
@@ -741,11 +753,11 @@ class ChasingWall {
 
 // Invert Zone — unsichtbare Trigger-Zone die Steuerung umkehrt
 // Flippt Controls wenn Spieler die X-Position passiert
-class InvertZone {
+class InvertTriggerLine {
     constructor(triggerX) {
         this.triggerX = triggerX;
         this.triggered = false;
-        this.type = 'invertZone';
+        this.type = 'invertTriggerLine';
     }
     update(player) {
         if (!this.triggered && player.alive && player.x > this.triggerX) {
@@ -761,6 +773,53 @@ class InvertZone {
     }
 }
 
+class InvertZone {
+    constructor(x, y, w, h) {
+        // KompatibilitÃ¤t: alte Levels nutzen InvertZone(triggerX) als Linie.
+        if (y === undefined && w === undefined && h === undefined) {
+            this.triggerX = x;
+            this.triggered = false;
+            this.mode = 'line';
+        } else {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.entryPadding = 24;
+            this.mode = 'zone';
+        }
+        this.type = 'invertZone';
+    }
+    getActiveRect() {
+        if (this.mode !== 'zone') return null;
+        const pad = Math.max(0, Math.min(this.entryPadding || 0, Math.max(0, this.w / 2 - 5)));
+        return {
+            x: this.x + pad,
+            y: this.y,
+            w: Math.max(10, this.w - pad * 2),
+            h: this.h,
+        };
+    }
+    contains(player) {
+        if (this.mode !== 'zone') return false;
+        return aabb(player, this.getActiveRect());
+    }
+    update(player) {
+        if (this.mode === 'line' && !this.triggered && player.alive && player.x > this.triggerX) {
+            this.triggered = true;
+            game.levelData.invertControls = !game.levelData.invertControls;
+            SFX.invertFlip();
+        }
+    }
+    draw() {}
+    reset() {
+        if (this.mode === 'line') {
+            this.triggered = false;
+            if (game.levelData) game.levelData.invertControls = false;
+        }
+    }
+}
+
 // Fake Spikes — sehen aus wie echte Spikes, töten aber NICHT
 class FakeSpikes {
     constructor(spikeList) {
@@ -769,16 +828,14 @@ class FakeSpikes {
     }
     update() {}
     draw() {
-        ctx.fillStyle = '#e74c3c';
         for (const s of this.spikes) {
-            ctx.beginPath();
-            if (s.dir === 'up') {
-                ctx.moveTo(s.x, s.y + (s.h || 15));
-                ctx.lineTo(s.x + (s.w || 16) / 2, s.y);
-                ctx.lineTo(s.x + (s.w || 16), s.y + (s.h || 15));
-            }
-            ctx.closePath();
-            ctx.fill();
+            drawSpike({
+                x: s.x,
+                y: s.y,
+                w: s.w || 20,
+                h: s.h || 20,
+                dir: s.dir || 'up',
+            });
         }
     }
     reset() {}
@@ -817,22 +874,26 @@ class WindZone {
         this.type = 'windZone';
     }
     update(player) {
+        const fx = this.force ?? this.vx ?? 0;
+        const fy = this.forceY ?? this.vy ?? 0;
         if (player.alive && aabb(player, this)) {
-            player.extVx += this.force;
-            player.extVy += this.forceY;
+            player.extVx += fx;
+            player.extVy += fy;
         }
     }
     draw() {
+        const fx = this.force ?? this.vx ?? 0;
+        const fy = this.forceY ?? this.vy ?? 0;
         ctx.globalAlpha = 0.1;
         // Grün für Updraft, Blau für horizontal, Orange für Downdraft
-        ctx.fillStyle = this.forceY < 0 ? '#a0f0a0' : (this.forceY > 0 ? '#f0b080' : '#87ceeb');
+        ctx.fillStyle = fy < 0 ? '#a0f0a0' : (fy > 0 ? '#f0b080' : '#87ceeb');
         ctx.fillRect(this.x, this.y, this.w, this.h);
 
         // Richtungsvektor aus force/forceY berechnen
-        const mag = Math.sqrt(this.force * this.force + this.forceY * this.forceY);
+        const mag = Math.sqrt(fx * fx + fy * fy);
         if (mag === 0) { ctx.globalAlpha = 1; return; }
-        const dx = this.force / mag;
-        const dy = this.forceY / mag;
+        const dx = fx / mag;
+        const dy = fy / mag;
 
         ctx.globalAlpha = 0.45;
         ctx.strokeStyle = '#ffffff';
@@ -840,7 +901,8 @@ class WindZone {
 
         const lineLen = 14;
         const grid = 26;
-        const offset = (game.frameCount * 1.5) % grid;
+        const frame = typeof game.frameCount === 'number' ? game.frameCount : 0;
+        const offset = (frame * 1.5) % grid;
 
         // Grid aus Linien die in Wind-Richtung zeigen
         for (let row = -1; row < Math.ceil(this.h / grid) + 1; row++) {
