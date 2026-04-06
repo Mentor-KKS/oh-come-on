@@ -87,19 +87,30 @@
                             <option value="fakeFloor">Fake Floor</option>
                             <option value="dodgingPlatform">Dodging Platform</option>
                             <option value="trollShaker">Troll Shaker</option>
+                            <option value="timedFloor">Timed Floor</option>
+                            <option value="movingPlatform">Moving Platform</option>
+                            <option value="togglePlatform">Toggle Platform</option>
+                            <option value="hiddenPlatform">Hidden Platform</option>
                         </optgroup>
                         <optgroup label="Hazards">
                             <option value="fallingCeiling">Falling Ceiling</option>
                             <option value="shootingSpike">Shooting Spike (hidden)</option>
                             <option value="shootingSpikeDisguised">Shooting Spike (disguised)</option>
+                            <option value="movingSpike">Moving Spike</option>
+                            <option value="risingDeath">Rising Death</option>
+                            <option value="chasingWall">Chasing Wall</option>
                             <option value="fakeExit">Fake Exit</option>
+                            <option value="fakeSpike">Fake Spikes</option>
                             <option value="killZone">Kill Zone</option>
                         </optgroup>
                         <optgroup label="Zones">
                             <option value="iceZone">Ice Zone</option>
                             <option value="windZone">Wind Zone</option>
+                            <option value="invertZone">Invert Zone</option>
+                            <option value="darknessOverlay">Darkness Overlay</option>
                         </optgroup>
-                        <optgroup label="Special">
+                        <optgroup label="Interactive">
+                            <option value="switch">Switch</option>
                             <option value="movingExit">Moving Exit</option>
                         </optgroup>
                     </select>
@@ -376,12 +387,24 @@
             case 'fakeFloor': return new FakeFloor(x,y,t.w,t.h);
             case 'dodgingPlatform': return new DodgingPlatform(x,y,t.w,t.h,t.dodgeX||x+100,t.triggerRange||80);
             case 'trollShaker': return new TrollShaker(x,y,t.w,t.h);
-            case 'fallingCeiling': return new FallingCeiling(x,y,t.w,t.h,t.triggerX||x);
-            case 'shootingSpike': case 'shootingSpikeDisguised': return new ShootingSpike(x,y,t.dir||-1,t.triggerX||x,t.speed||4,null,null,t.disguised||false);
+            case 'timedFloor': return new TimedFloor(x,y,t.w,t.h,t.delay||120);
+            case 'togglePlatform': return new TogglePlatform(x,y,t.w,t.h,t.group||'A');
+            case 'movingPlatform': return new MovingPlatform(x,y,t.w,t.h,x,(t.targetX||x)+ox,t.speed||0.5);
+            case 'hiddenPlatform': return new HiddenPlatform(x,y,t.w,t.h,{x:x-50,y:y-80,w:200,h:100});
+            case 'triggerFloor': return new TriggerFloor(x,y,t.w,t.h,t.triggerX||x);
+            case 'fallingCeiling': return new FallingCeiling(x,y,t.w,t.h,t.triggerX||x,t.fake||false);
+            case 'shootingSpike': case 'shootingSpikeDisguised': return new ShootingSpike(x,y,t.dir||'left',t.triggerX||x,t.speed||4,null,null,t.disguised||false);
+            case 'movingSpike': return new MovingSpike(t.x1||x,t.y1||y,(t.x2||x+100)+ox,(t.y2||y)+oy,t.speed||0.01);
+            case 'risingDeath': return new RisingDeath(t.speed||0.3,t.startDelay||120,t.startY);
+            case 'chasingWall': return new ChasingWall(t.speed||0.5,t.startDelay||90);
             case 'fakeExit': return new FakeExit(x,y);
+            case 'fakeSpikes': return new FakeSpikes(t.spikes?t.spikes.map(s=>({x:s.x+ox,y:s.y+oy,w:s.w,h:s.h,dir:s.dir})):[{x,y,w:25,h:15,dir:'up'}]);
             case 'killZone': return new KillZone(x,y,t.w||50,t.h||50);
             case 'iceZone': return new IceZone(x,y,t.w||150,t.h||50);
             case 'windZone': return new WindZone(x,y,t.w||100,t.h||100,t.vx||0,t.vy||0);
+            case 'invertZone': return new InvertZone(x,y);
+            case 'darknessOverlay': return new DarknessOverlay();
+            case 'switch': return new Switch(x,y,t.group||'A');
             case 'movingExit': return new MovingExit(t.positions?t.positions.map(p=>({x:p.x+ox,y:p.y+oy})):[{x,y}]);
             default: return { x,y,w:t.w||30,h:t.h||20,type:t.type||'unknown',update(){},draw(){ctx.fillStyle='#f1c40f';ctx.globalAlpha=0.5;ctx.fillRect(this.x,this.y,this.w,this.h);ctx.globalAlpha=1;},reset(){} };
         }
@@ -402,10 +425,21 @@
                 case 'fallingCeiling': trap = new FallingCeiling(x,y,60,30,x+30); break;
                 case 'shootingSpike': trap = new ShootingSpike(x,y,'left',x-100,4); break;
                 case 'shootingSpikeDisguised': trap = new ShootingSpike(x,y,'left',x-100,4,null,null,true); break;
+                case 'timedFloor': trap = new TimedFloor(x,y,100,20,120); break;
+                case 'movingPlatform': trap = new MovingPlatform(x,y,80,20,x,x+100,0.5); break;
+                case 'togglePlatform': trap = new TogglePlatform(x,y,80,20,'A'); break;
+                case 'hiddenPlatform': trap = new HiddenPlatform(x,y,100,20,{x:x-50,y:y-80,w:200,h:100}); break;
+                case 'movingSpike': trap = new MovingSpike(x,y,x+100,y,0.01); break;
+                case 'risingDeath': trap = new RisingDeath(0.3,120); break;
+                case 'chasingWall': trap = new ChasingWall(0.5,90); break;
                 case 'fakeExit': trap = new FakeExit(x,y); break;
+                case 'fakeSpike': trap = new FakeSpikes([{x,y,w:25,h:15,dir:'up'}]); break;
                 case 'killZone': trap = new KillZone(x,y,50,50); break;
                 case 'iceZone': trap = new IceZone(x,y,150,50); break;
                 case 'windZone': trap = new WindZone(x,y,100,100,0.5,0); break;
+                case 'invertZone': trap = new InvertZone(x,y); break;
+                case 'darknessOverlay': trap = new DarknessOverlay(); break;
+                case 'switch': trap = new Switch(x,y,'A'); break;
                 case 'movingExit': trap = new MovingExit([{x,y:y-20}]); break;
             }
             if (trap) currentLvl.traps.push(trap);
@@ -439,24 +473,104 @@
         // Trap-spezifische Parameter
         if (selected.type === 'trap' && r.type) {
             const tp = [];
-            if (r.type === 'dodgingPlatform') {
+            const t = r.type;
+
+            // Platforms
+            if (t === 'fallingFloor') {
+                // Keine extra Settings (triggert bei Kontakt)
+            }
+            if (t === 'fakeFloor') {
+                // Keine extra Settings (ist einfach nicht solid)
+            }
+            if (t === 'dodgingPlatform') {
                 tp.push({ key:'dodgeX', label:'Dodge To X', val: r.dodgeX||0 });
                 tp.push({ key:'triggerRange', label:'Trigger Range', val: r.triggerRange||80 });
             }
-            if (r.type === 'shootingSpike') {
-                tp.push({ key:'dir', label:'Shoot Dir', val: r.dir||'left', dropdown:['left','right','up','down'] });
+            if (t === 'trollShaker') {
+                // Keine extra Settings (wackelt einfach)
+            }
+            if (t === 'timedFloor') {
+                tp.push({ key:'delay', label:'Delay (frames)', val: r.delay||120 });
+            }
+            if (t === 'triggerFloor') {
+                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+            }
+            if (t === 'disappearing') {
+                tp.push({ key:'fadeDelay', label:'Fade Delay', val: r.fadeDelay||30 });
+            }
+            if (t === 'togglePlatform') {
+                tp.push({ key:'group', label:'Group', val: r.group||'A', dropdown:['A','B','C','D'] });
+                tp.push({ key:'active', label:'Start Active', val: r.active?'yes':'no', dropdown:['yes','no'] });
+            }
+            if (t === 'movingPlatform') {
+                tp.push({ key:'targetX', label:'Target X', val: r.targetX||0 });
+                tp.push({ key:'targetY', label:'Target Y', val: r.targetY||r.y });
+                tp.push({ key:'speed', label:'Speed', val: r.speed||0.5 });
+            }
+            if (t === 'hiddenPlatform') {
+                // Sichtbar wenn Spieler in Trigger-Area ist
+            }
+
+            // Hazards
+            if (t === 'fallingCeiling') {
+                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                tp.push({ key:'fake', label:'Fake (nur visuell)', val: r.fake?'yes':'no', dropdown:['no','yes'] });
+            }
+            if (t === 'shootingSpike') {
+                tp.push({ key:'dir', label:'Shoot Dir', val: (r.dir===1||r.dir==='right')?'right':(r.dir==='up')?'up':(r.dir==='down')?'down':'left', dropdown:['left','right','up','down'] });
                 tp.push({ key:'speed', label:'Speed', val: r.speed||4 });
                 tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
                 tp.push({ key:'disguised', label:'Disguised', val: r.disguised?'yes':'no', dropdown:['no','yes'] });
             }
-            if (r.type === 'fallingCeiling') {
+            if (t === 'risingSpikes') {
                 tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                tp.push({ key:'speed', label:'Speed', val: r.speed||1 });
             }
-            if (r.type === 'windZone') {
+            if (t === 'crushingBlock') {
+                tp.push({ key:'speed', label:'Fall Speed', val: r.speed||3 });
+            }
+            if (t === 'movingSpike') {
+                tp.push({ key:'x1', label:'Start X', val: r.x1||0 });
+                tp.push({ key:'y1', label:'Start Y', val: r.y1||0 });
+                tp.push({ key:'x2', label:'End X', val: r.x2||0 });
+                tp.push({ key:'y2', label:'End Y', val: r.y2||0 });
+                tp.push({ key:'speed', label:'Speed', val: r.speed||0.01 });
+            }
+            if (t === 'fakeExit') {
+                tp.push({ key:'showAboveY', label:'Show Above Y', val: r.showAboveY||0 });
+            }
+            if (t === 'risingDeath') {
+                tp.push({ key:'speed', label:'Speed', val: r.speed||0.3 });
+                tp.push({ key:'startDelay', label:'Start Delay', val: r.startDelay||120 });
+            }
+            if (t === 'chasingWall') {
+                tp.push({ key:'speed', label:'Speed', val: r.speed||0.5 });
+                tp.push({ key:'startDelay', label:'Start Delay', val: r.startDelay||90 });
+            }
+
+            // Zones
+            if (t === 'iceZone') {
+                // Keine extra Settings (Zone = rutschig)
+            }
+            if (t === 'windZone') {
                 tp.push({ key:'vx', label:'Wind X', val: r.vx||0 });
                 tp.push({ key:'vy', label:'Wind Y', val: r.vy||0 });
             }
-            if (r.type === 'movingExit') {
+            if (t === 'invertZone') {
+                // Keine extra Settings (flippt Controls)
+            }
+            if (t === 'darknessOverlay') {
+                tp.push({ key:'radius', label:'Light Radius', val: r.radius||95 });
+            }
+            if (t === 'killZone') {
+                // Keine extra Settings (instant kill)
+            }
+
+            // Interactives
+            if (t === 'switch') {
+                tp.push({ key:'group', label:'Group', val: r.group||'A', dropdown:['A','B','C','D'] });
+            }
+            if (t === 'movingExit') {
                 tp.push({ key:'triggerDist', label:'Trigger Dist', val: r.triggerDist||55 });
             }
             if (tp.length) {
@@ -493,6 +607,9 @@
         if (!selected) return;
         if (key === 'dir') selected.ref.dir = val;
         else if (key === 'disguised') selected.ref.disguised = (val === 'yes');
+        else if (key === 'fake') selected.ref.fake = (val === 'yes');
+        else if (key === 'active') selected.ref.active = (val === 'yes');
+        else if (key === 'group') selected.ref.group = val;
         else selected.ref[key] = val;
     }
 
