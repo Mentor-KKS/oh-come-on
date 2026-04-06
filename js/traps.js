@@ -96,23 +96,42 @@ class RisingSpikes {
 }
 
 class FallingCeiling {
-    constructor(x, y, w, h, triggerX, fake, triggerMaxY) {
+    constructor(x, y, w, h, triggerX, fake) {
         this.x = x; this.origY = y; this.y = y;
         this.w = w; this.h = h || 30;
         this.triggerX = triggerX;
-        this.triggerMaxY = triggerMaxY || null;  // nur triggern wenn player.y < triggerMaxY
+        this.triggerMode = 'x';      // 'x' | 'y' | 'proximity' | 'area'
+        this.triggerY = y;
+        this.triggerDist = 60;
+        this.triggerArea = null;
         this.triggered = false;
         this.vy = 0;
         this.solid = true;
-        this.fake = fake || false;  // Fake blocks fallen, töten aber nicht
+        this.fake = fake || false;
         this.type = 'fallingCeiling';
     }
+    checkTrigger(player) {
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        switch (this.triggerMode) {
+            case 'x': return Math.abs(px - this.triggerX) < 40;
+            case 'y': return Math.abs(py - this.triggerY) < 40;
+            case 'proximity': {
+                const dx = px - (this.x + this.w/2);
+                const dy = py - (this.y + this.h/2);
+                return Math.sqrt(dx*dx + dy*dy) < this.triggerDist;
+            }
+            case 'area': {
+                const a = this.triggerArea;
+                return a && px >= a.x && px <= a.x+a.w && py >= a.y && py <= a.y+a.h;
+            }
+        }
+        return false;
+    }
     update(player) {
-        if (this.fake) return;  // Fake blocks bleiben einfach hängen (nur visuell)
+        if (this.fake) return;
         if (!this.triggered && player.alive) {
-            const xMatch = Math.abs(player.x + player.w / 2 - this.triggerX) < 40;
-            const yMatch = !this.triggerMaxY || player.y < this.triggerMaxY;
-            if (xMatch && yMatch) this.triggered = true;
+            if (this.checkTrigger(player)) this.triggered = true;
         }
         if (this.triggered) {
             this.vy += 0.2;
@@ -262,22 +281,49 @@ class DisappearingPlatform {
 }
 
 class ShootingSpike {
-    constructor(x, y, dir, triggerX, speed) {
+    constructor(x, y, dir, triggerX, speed, a, b, disguised) {
         this.origX = x; this.origY = y;
         this.x = x; this.y = y;
-        this.w = 20; this.h = 14;
+        this.w = 20; this.h = 20;
         this.dir = dir;
         this.triggerX = triggerX;
         this.speed = speed || 6;
+        this.triggerMode = 'x';      // 'x' | 'y' | 'proximity' | 'area'
+        this.triggerY = y;            // für y-Modus
+        this.triggerDist = 80;        // für proximity-Modus
+        this.triggerArea = null;      // für area-Modus: {x,y,w,h}
         this.triggered = false;
+        this.disguised = disguised || false;
         this.type = 'shootingSpike';
+    }
+    checkTrigger(player) {
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        switch (this.triggerMode) {
+            case 'x': return Math.abs(px - this.triggerX) < 50;
+            case 'y': return Math.abs(py - this.triggerY) < 50;
+            case 'proximity': {
+                const dx = px - (this.x + this.w/2);
+                const dy = py - (this.y + this.h/2);
+                return Math.sqrt(dx*dx + dy*dy) < this.triggerDist;
+            }
+            case 'area': {
+                const a = this.triggerArea;
+                return a && px >= a.x && px <= a.x+a.w && py >= a.y && py <= a.y+a.h;
+            }
+        }
+        return false;
     }
     update(player) {
         if (!this.triggered && player.alive) {
-            if (Math.abs(player.x - this.triggerX) < 50) this.triggered = true;
+            if (this.checkTrigger(player)) this.triggered = true;
         }
         if (this.triggered) {
-            this.x += this.dir === 'right' ? this.speed : -this.speed;
+            const d = this.dir;
+            if (d === 'right' || d === 1)  this.x += this.speed;
+            else if (d === 'left' || d === -1) this.x -= this.speed;
+            else if (d === 'up')    this.y -= this.speed;
+            else if (d === 'down')  this.y += this.speed;
         }
         if (this.triggered && player.alive) {
             if (aabb(player, { x: this.x + 2, y: this.y + 2, w: this.w - 4, h: this.h - 4 })) {
@@ -286,17 +332,21 @@ class ShootingSpike {
         }
     }
     draw() {
-        if (!this.triggered) return;  // Vor dem Trigger unsichtbar
+        if (!this.disguised && !this.triggered) return;  // Versteckt: unsichtbar bis Trigger
+
         ctx.fillStyle = '#e74c3c';
         ctx.beginPath();
-        if (this.dir === 'right') {
-            ctx.moveTo(this.x, this.y);
-            ctx.lineTo(this.x + this.w, this.y + this.h / 2);
-            ctx.lineTo(this.x, this.y + this.h);
+        const d = this.dir;
+        const sDir = (d === 'right' || d === 1) ? 'right' : (d === 'up') ? 'up' : (d === 'down') ? 'down' : 'left';
+
+        if (sDir === 'right') {
+            ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + this.w, this.y + this.h/2); ctx.lineTo(this.x, this.y + this.h);
+        } else if (sDir === 'left') {
+            ctx.moveTo(this.x + this.w, this.y); ctx.lineTo(this.x, this.y + this.h/2); ctx.lineTo(this.x + this.w, this.y + this.h);
+        } else if (sDir === 'up') {
+            ctx.moveTo(this.x, this.y + this.h); ctx.lineTo(this.x + this.w/2, this.y); ctx.lineTo(this.x + this.w, this.y + this.h);
         } else {
-            ctx.moveTo(this.x + this.w, this.y);
-            ctx.lineTo(this.x, this.y + this.h / 2);
-            ctx.lineTo(this.x + this.w, this.y + this.h);
+            ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + this.w/2, this.y + this.h); ctx.lineTo(this.x + this.w, this.y);
         }
         ctx.closePath();
         ctx.fill();
@@ -621,9 +671,10 @@ class TriggerFloor {
 
 // Rising Death — rote Todeszone steigt von unten hoch
 class RisingDeath {
-    constructor(speed) {
-        this.y = H + 20;
-        this.startDelay = 120;  // ~2 Sekunden bevor es losgeht
+    constructor(speed, startDelay, startY) {
+        this.startY = startY !== undefined ? startY : H + 20;
+        this.y = this.startY;
+        this.startDelay = startDelay || 120;  // ~2 Sekunden bevor es losgeht
         this.timer = 0;
         this.speed = speed || 0.3;
         this.type = 'risingDeath';
@@ -637,9 +688,10 @@ class RisingDeath {
         }
     }
     draw() {
+        const lvlH = (game.levelData && game.levelData.height) || H;
         // Todes-Zone
         ctx.fillStyle = '#8b0000';
-        ctx.fillRect(-500, this.y, 2000, H + 100);
+        ctx.fillRect(-500, this.y, 2000, lvlH + 200);
         // Glühende Oberkante
         ctx.fillStyle = '#e74c3c';
         ctx.fillRect(-500, this.y - 2, 2000, 4);
@@ -649,7 +701,7 @@ class RisingDeath {
         ctx.globalAlpha = 1;
     }
     reset() {
-        this.y = H + 20;
+        this.y = this.startY;
         this.timer = 0;
     }
 }
@@ -1024,11 +1076,14 @@ class DodgingPlatform {
         this.type = 'dodgingPlatform';
     }
     update(player) {
-        if (this.state === 'idle' && !this.dodged && player.alive && !player.grounded) {
+        if (this.state === 'idle' && !this.dodged && player.alive) {
             const px = player.x + player.w / 2;
             const py = player.y + player.h;
             const cx = this.x + this.w / 2;
-            if (Math.abs(px - cx) < this.triggerRange && py < this.y + 15) {
+            const inRange = Math.abs(px - cx) < this.triggerRange;
+            const abovePlatform = !player.grounded && py < this.y + 40;
+            const landedOnIt = player.grounded && py <= this.y + 3 && player.x + player.w > this.x && player.x < this.x + this.w;
+            if (inRange && (abovePlatform || landedOnIt)) {
                 this.state = 'dodging';
                 this.targetX = this.dodgeX;
             }
@@ -1071,5 +1126,34 @@ class DodgingPlatform {
         this.dodged = false;
         this.targetX = this.origX;
         this.waitTimer = 0;
+    }
+}
+
+// ── ICE ZONE ───────────────────────────────────────────────
+// Unsichtbare Zone die den Spieler rutschen lässt (Friction = 0.98)
+class IceZone {
+    constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.type = 'iceZone';
+        this.shimmerT = 0;
+    }
+    update(player) {
+        this.shimmerT += 0.02;
+        if (player.alive && aabb(player, { x: this.x, y: this.y - 5, w: this.w, h: this.h + 10 })) {
+            player.onIce = true;
+        }
+    }
+    draw() {
+        // Subtiler Eis-Shimmer
+        ctx.globalAlpha = 0.06 + Math.sin(this.shimmerT) * 0.03;
+        ctx.fillStyle = '#aaddff';
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.globalAlpha = 1;
+    }
+    reset() {
+        this.shimmerT = 0;
     }
 }

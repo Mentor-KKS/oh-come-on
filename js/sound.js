@@ -5,10 +5,18 @@
 const SFX = {
     ctx: null,
     muted: true,
+    musicVol: 100,
+    sfxVol: 100,
 
     setMuted(m) {
         this.muted = m;
-        if (this.bgGain) this.bgGain.gain.value = m ? 0 : 0.04;
+        this.applyVolumes();
+    },
+
+    applyVolumes() {
+        if (this.bgGain) {
+            this.bgGain.gain.value = this.muted ? 0 : 0.04 * (this.musicVol / 100);
+        }
     },
 
     init() {
@@ -29,7 +37,8 @@ const SFX = {
             osc.type = type || 'square';
             osc.frequency.setValueAtTime(freq, ctx.currentTime);
             osc.frequency.linearRampToValueAtTime(endFreq, ctx.currentTime + duration);
-            gain.gain.setValueAtTime(vol || 0.15, ctx.currentTime);
+            const scaledVol = (vol || 0.15) * (this.sfxVol / 100);
+            gain.gain.setValueAtTime(scaledVol, ctx.currentTime);
             gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
             osc.connect(gain);
             gain.connect(ctx.destination);
@@ -96,7 +105,7 @@ const SFX = {
 
         const ctx = this.ctx;
         this.bgGain = ctx.createGain();
-        this.bgGain.gain.value = 0.04; // sehr leise
+        this.bgGain.gain.value = this.muted ? 0 : 0.04 * (this.musicVol / 100);
         this.bgGain.connect(ctx.destination);
 
         // Einfache Chiptune-Melodie die loopt

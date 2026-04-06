@@ -1,0 +1,2068 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>OH COME ON! — Level Editor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #111; color: #ccc; font-family: 'Courier New', monospace; display: flex; height: 100vh; overflow: hidden; }
+
+        #sidebar { width: 320px; background: #1a1a2e; border-right: 2px solid #333; display: flex; flex-direction: column; overflow-y: auto; }
+        #sidebar h3 { color: #2ecc71; padding: 8px 12px; border-bottom: 1px solid #333; font-size: 13px; cursor: pointer; user-select: none; }
+        #sidebar h3:hover { background: #252540; }
+        .panel { padding: 8px 12px; border-bottom: 1px solid #222; }
+        .panel.collapsed .panel-body { display: none; }
+        .panel-body { padding-top: 6px; }
+
+        .row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+        .row label { width: 90px; font-size: 11px; color: #888; flex-shrink: 0; }
+        .row input[type="number"], .row select { background: #0a0a15; color: #fff; border: 1px solid #444; padding: 3px 6px; font-family: inherit; font-size: 12px; width: 70px; }
+        .row input[type="number"]:focus { border-color: #2ecc71; outline: none; }
+        .row select { width: 100%; }
+
+        button { background: #2a2a4a; color: #ccc; border: 1px solid #555; padding: 5px 10px; font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #3a3a6a; color: #fff; }
+        button.active { background: #2ecc71; color: #000; border-color: #2ecc71; }
+        button.danger { background: #8b0000; border-color: #e74c3c; }
+        button.danger:hover { background: #e74c3c; color: #fff; }
+
+        #main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        #toolbar { background: #1a1a2e; padding: 8px 15px; display: flex; gap: 10px; align-items: center; width: 100%; border-bottom: 2px solid #333; flex-wrap: wrap; }
+        #toolbar label { font-size: 12px; color: #888; }
+        #toolbar select { background: #0a0a15; color: #fff; border: 1px solid #444; padding: 4px 8px; font-family: inherit; }
+
+        #canvasWrap { position: relative; margin: 15px; }
+        canvas { background: #2a2a4a; border: 2px solid #444; cursor: crosshair; }
+        #coords { position: absolute; bottom: -22px; left: 0; font-size: 11px; color: #666; }
+        #info { position: absolute; top: -22px; right: 0; font-size: 11px; color: #666; }
+
+        .tools { display: flex; gap: 4px; }
+
+        #annotations { max-height: 200px; overflow-y: auto; }
+        .anno-item { background: #0a0a15; padding: 4px 8px; margin: 3px 0; border-left: 3px solid #f1c40f; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
+        .anno-item .del { color: #e74c3c; cursor: pointer; font-weight: bold; }
+
+        #elements { max-height: 250px; overflow-y: auto; }
+        .elem-item { padding: 3px 8px; font-size: 11px; cursor: pointer; border-left: 3px solid transparent; }
+        .elem-item:hover { background: #252540; }
+        .elem-item.selected { background: #2a2a5a; border-left-color: #2ecc71; }
+
+        textarea { background: #0a0a15; color: #ccc; border: 1px solid #444; font-family: inherit; font-size: 11px; width: 100%; resize: vertical; padding: 4px; }
+        textarea:focus { border-color: #2ecc71; outline: none; }
+
+        .color-platform { color: #d0d0d0; }
+        .color-spike { color: #e74c3c; }
+        .color-trap { color: #f1c40f; }
+        .color-exit { color: #2ecc71; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <!-- Level & Tool -->
+        <div class="panel">
+            <div class="panel-body">
+                <div class="row">
+                    <label>Level:</label>
+                    <select id="levelSelect"></select>
+                </div>
+                <div class="row" style="margin-top:8px;">
+                    <div class="tools">
+                        <button id="toolSelect" class="active" onclick="setTool('select')">Select</button>
+                        <button id="toolAdd" onclick="setTool('add')">Add</button>
+                        <button id="toolMark" onclick="setTool('mark')">Mark</button>
+                    </div>
+                </div>
+                <div class="row" id="addTypeRow" style="display:none;">
+                    <label>Add Type:</label>
+                    <select id="addType">
+                        <optgroup label="Basics">
+                            <option value="platform">Platform</option>
+                            <option value="spike">Spike</option>
+                            <option value="exit">Exit (static)</option>
+                        </optgroup>
+                        <optgroup label="Floors / Platforms">
+                            <option value="fallingFloor">FallingFloor</option>
+                            <option value="fakeFloor">FakeFloor</option>
+                            <option value="dodgingPlatform">DodgingPlatform</option>
+                            <option value="trollShaker">TrollShaker</option>
+                            <option value="timedFloor">TimedFloor</option>
+                            <option value="togglePlatform">TogglePlatform</option>
+                            <option value="movingPlatform">MovingPlatform</option>
+                            <option value="hiddenPlatform">HiddenPlatform</option>
+                        </optgroup>
+                        <optgroup label="Hazards">
+                            <option value="fallingCeiling">FallingCeiling</option>
+                            <option value="shootingSpike">ShootingSpike (hidden)</option>
+                            <option value="shootingSpikeDisguised">ShootingSpike (disguised)</option>
+                            <option value="fakeSpike">FakeSpike</option>
+                            <option value="fakeExit">FakeExit</option>
+                            <option value="killZone">KillZone</option>
+                            <option value="risingDeath">RisingDeath</option>
+                            <option value="chasingWall">ChasingWall</option>
+                        </optgroup>
+                        <optgroup label="Zones">
+                            <option value="iceZone">IceZone</option>
+                            <option value="windZone">WindZone</option>
+                            <option value="invertZone">InvertZone</option>
+                        </optgroup>
+                        <optgroup label="Interactives">
+                            <option value="switch">Switch</option>
+                            <option value="movingExit">MovingExit</option>
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Properties -->
+        <h3 onclick="togglePanel(this)">Properties</h3>
+        <div class="panel" id="propsPanel">
+            <div class="panel-body" id="propsBody">
+                <div style="color:#555;font-size:11px;">Click an element to select</div>
+            </div>
+        </div>
+
+        <!-- Elements -->
+        <h3 onclick="togglePanel(this)">Elements</h3>
+        <div class="panel" id="elemPanel">
+            <div class="panel-body" id="elements"></div>
+        </div>
+
+        <!-- Physics -->
+        <h3 onclick="togglePanel(this)">Physics</h3>
+        <div class="panel" id="physPanel">
+            <div class="panel-body">
+                <div class="row"><label>Gravity:</label><input type="number" step="0.01" id="phGravity"></div>
+                <div class="row"><label>Jump Force:</label><input type="number" step="0.1" id="phJump"></div>
+                <div class="row"><label>Move Speed:</label><input type="number" step="0.1" id="phSpeed"></div>
+                <div class="row"><label>Friction:</label><input type="number" step="0.01" id="phFriction"></div>
+                <div class="row"><label>Ice Friction:</label><input type="number" step="0.001" id="phIceFric" value="0.99"></div>
+                <div class="row"><label>Ice Accel x:</label><input type="number" step="0.01" id="phIceAccel" value="0.15"></div>
+                <div class="row"><label>Ice Max Spd x:</label><input type="number" step="0.1" id="phIceSpd" value="2.5"></div>
+                <div class="row">
+                    <label>Jump Arc:</label>
+                    <button id="btnArc" onclick="toggleJumpArc()">Show</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Annotations -->
+        <h3 onclick="togglePanel(this)">Annotations / Notes</h3>
+        <div class="panel" id="annoPanel">
+            <div class="panel-body">
+                <div id="annotations"></div>
+                <textarea id="exportNotes" rows="4" placeholder="Notes for this level..."></textarea>
+            </div>
+        </div>
+
+        <!-- Variants -->
+        <h3 onclick="togglePanel(this)">Level Variants</h3>
+        <div class="panel" id="varPanel">
+            <div class="panel-body">
+                <button onclick="saveVariant()" style="width:100%;margin-bottom:6px;">Save Current as Variant</button>
+                <div id="variantList"><div style="color:#555;font-size:11px;">No saved variants</div></div>
+            </div>
+        </div>
+
+        <!-- Export -->
+        <div class="panel" style="margin-top:auto; border-top:2px solid #333;">
+            <div class="panel-body">
+                <button onclick="testLevel()" style="width:100%;padding:10px;font-size:14px;background:#2ecc71;color:#000;font-weight:bold;border-color:#27ae60;">&#9654; Test Level</button>
+                <button onclick="exportCode()" style="width:100%;padding:8px;font-size:13px;margin-top:5px;">Copy Level Code</button>
+                <button onclick="exportAnnotations()" style="width:100%;padding:8px;font-size:13px;margin-top:5px;">Copy Annotations</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Overlay (nutzt den gameCanvas direkt) -->
+    <div id="testOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:#0a0a0f;">
+        <div style="position:absolute;top:10px;right:15px;color:#e74c3c;font-family:monospace;font-size:14px;cursor:pointer;z-index:10000;background:#1a1a2e;padding:6px 14px;border:1px solid #e74c3c;border-radius:4px;" onclick="stopTest()">ESC — Back to Editor</div>
+        <div style="position:absolute;top:10px;left:15px;color:#f1c40f;font-family:monospace;font-size:13px;z-index:10000;" id="testInfo">TEST MODE</div>
+    </div>
+
+    <div id="main">
+        <div id="toolbar">
+            <label>Grid:</label>
+            <input type="checkbox" id="showGrid" checked onchange="render()">
+            <label>Snap:</label>
+            <input type="number" id="snapSize" value="5" style="width:40px;background:#0a0a15;color:#fff;border:1px solid #444;padding:2px 4px;font-family:inherit;" onchange="render()">
+            <label>Jump Arc:</label>
+            <input type="checkbox" id="showArc" onchange="render()">
+            <label style="margin-left:20px;">Zoom:</label>
+            <input type="range" id="zoomRange" min="0.5" max="2" step="0.1" value="1" oninput="render()">
+            <span id="zoomLabel">1x</span>
+        </div>
+        <div id="canvasWrap">
+            <canvas id="gameCanvas" width="800" height="500"></canvas>
+            <div id="coords">Mouse: (0, 0)</div>
+            <div id="info"></div>
+        </div>
+    </div>
+
+    <!-- Stubs -->
+    <!-- Stubs BEFORE engine.js (sound.js not loaded, stub is enough) -->
+    <script>
+        const SFX = { muted:true, ctx:null, musicVol:100, sfxVol:100, init(){}, play(){}, tone(){},
+            setMuted(){}, applyVolumes(){}, jump(){}, land(){}, death(){}, levelComplete(){},
+            trapTrigger(){}, spikeRise(){}, exitMove(){}, wallChase(){}, menuSelect(){},
+            invertFlip(){}, bgPlaying:false, bgGain:null, startMusic(){}, stopMusic(){} };
+        window.EDITOR_MODE = true;
+    </script>
+    <script src="js/engine.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/traps.js"></script>
+    <script src="js/renderer.js"></script>
+
+    <!-- LEVELS array + game stub (game.js not loaded) -->
+    <script>
+        const LEVELS = [];
+        const game = { levelData: null, cameraX: 0, cameraY: 0 };
+    </script>
+    <script src="js/levels/level01.js"></script>
+    <script src="js/levels/level02.js"></script>
+    <script src="js/levels/level03.js"></script>
+    <script src="js/levels/level04.js"></script>
+    <script src="js/levels/level05.js"></script>
+    <script src="js/levels/level06.js"></script>
+    <script src="js/levels/level07.js"></script>
+    <script src="js/levels/level08.js"></script>
+    <script src="js/levels/level09.js"></script>
+    <script src="js/levels/level10.js"></script>
+    <script src="js/levels/level11.js"></script>
+    <script src="js/levels/level12.js"></script>
+    <script src="js/levels/level13.js"></script>
+    <script src="js/levels/level14.js"></script>
+    <script src="js/levels/level15.js"></script>
+    <script src="js/levels/level16.js"></script>
+    <script src="js/levels/level17.js"></script>
+    <script src="js/levels/level18.js"></script>
+    <script src="js/levels/level19.js"></script>
+    <script src="js/levels/level20.js"></script>
+
+    <script>
+    // ================================================================
+    //  LEVEL EDITOR
+    // ================================================================
+
+    // canvas + ctx kommen von engine.js (bereits geladen)
+    const edCanvas = canvas;  // Referenz auf engine.js canvas
+    const cx = ctx;           // Referenz auf engine.js ctx
+    const coordsEl = document.getElementById('coords');
+    const infoEl = document.getElementById('info');
+
+    let currentLevel = 0;
+    let selected = null;       // { type: 'platform'|'spike'|'trap'|'exit'|'player', index, ref }
+    let tool = 'select';
+    let dragging = false;
+    let dragOffX = 0, dragOffY = 0;
+    let mouseX = 0, mouseY = 0;
+    let showJumpArc = false;
+
+    // Annotations per level
+    let annotations = {};  // { levelIndex: [ {x,y,w,h,text} ] }
+    let markStart = null;  // Temp for drawing marks
+
+    // Element notes: { "levelIdx-type-index": "note text" }
+    let elementNotes = {};
+
+    // Undo/Redo
+    let undoStack = [];
+    let redoStack = [];
+    const MAX_UNDO = 50;
+
+    // Clipboard für Copy/Paste
+    let clipboard = null;
+
+    // Level Variants
+    let variants = {};  // { levelIdx: { name: serializedState } }
+
+    // ── TRAP SERIALIZATION ─────────────────────────────────
+    function serializeTrap(t) {
+        const data = { type: t.type, x: t.x, y: t.y, w: t.w, h: t.h };
+        // Typ-spezifische Parameter
+        if (t.triggerX !== undefined) data.triggerX = t.triggerX;
+        if (t.triggerDist !== undefined) data.triggerDist = t.triggerDist;
+        if (t.triggerMode !== undefined) data.triggerMode = t.triggerMode;
+        if (t.triggerY !== undefined) data.triggerY = t.triggerY;
+        if (t.triggerArea) data.triggerArea = JSON.parse(JSON.stringify(t.triggerArea));
+        if (t.disguised) data.disguised = true;
+        if (t.triggerRange !== undefined) data.triggerRange = t.triggerRange;
+        if (t.triggerMinY !== undefined && t.triggerMinY) data.triggerMinY = t.triggerMinY;
+        if (t.triggerMaxY !== undefined && t.triggerMaxY) data.triggerMaxY = t.triggerMaxY;
+        if (t.speed !== undefined) data.speed = t.speed;
+        if (t.startDelay !== undefined) data.startDelay = t.startDelay;
+        if (t.startY !== undefined) data.startY = t.startY;
+        if (t.dir !== undefined) data.dir = t.dir;
+        if (t.delay !== undefined) data.delay = t.delay;
+        if (t.dodgeX !== undefined) data.dodgeX = t.dodgeX;
+        if (t.vx !== undefined) data.vx = t.vx;
+        if (t.vy !== undefined) data.vy = t.vy;
+        if (t.group !== undefined) data.group = t.group;
+        if (t.targetX !== undefined) data.targetX = t.targetX;
+        if (t.targetY !== undefined) data.targetY = t.targetY;
+        if (t.positions) data.positions = JSON.parse(JSON.stringify(t.positions));
+        if (t.spikes) data.spikes = JSON.parse(JSON.stringify(t.spikes));
+        if (t.x1 !== undefined) { data.x1 = t.x1; data.y1 = t.y1; data.x2 = t.x2; data.y2 = t.y2; }
+        return data;
+    }
+
+    function deserializeTrap(data) {
+        const fake = { ...data };
+        const trap = cloneTrap(fake, 0, 0);
+        // ALLE gespeicherten Properties drüberschreiben (cloneTrap setzt Defaults die wir überschreiben wollen)
+        for (const key in data) {
+            if (key === 'type') continue; // Typ nicht überschreiben
+            if (typeof data[key] !== 'object') {
+                trap[key] = data[key];
+            }
+        }
+        // Objekt-Properties separat
+        if (data.positions) trap.positions = JSON.parse(JSON.stringify(data.positions));
+        if (data.spikes) trap.spikes = JSON.parse(JSON.stringify(data.spikes));
+        if (data.triggerArea) trap.triggerArea = JSON.parse(JSON.stringify(data.triggerArea));
+        return trap;
+    }
+
+    // ── DEEP CLONE LEVEL STATE ────────────────────────────────
+    function cloneLevelState(lvl) {
+        return JSON.stringify({
+            player: { x: lvl.player.x, y: lvl.player.y },
+            exit: lvl.exit ? { x: lvl.exit.x, y: lvl.exit.y, w: lvl.exit.w, h: lvl.exit.h } : null,
+            platforms: lvl.platforms.map(p => ({ x: p.x, y: p.y, w: p.w, h: p.h })),
+            spikes: lvl.spikes.map(s => ({ x: s.x, y: s.y, w: s.w, h: s.h, dir: s.dir })),
+            traps: lvl.traps.map(t => serializeTrap(t)),
+        });
+    }
+
+    function restoreLevelState(lvl, json) {
+        const state = JSON.parse(json);
+
+        // Player
+        lvl.player.x = state.player.x;
+        lvl.player.y = state.player.y;
+
+        // Exit (kann null sein bei MovingExit)
+        if (state.exit === null) {
+            lvl.exit = null;
+        } else if (state.exit) {
+            if (!lvl.exit) lvl.exit = {};
+            lvl.exit.x = state.exit.x; lvl.exit.y = state.exit.y;
+            lvl.exit.w = state.exit.w; lvl.exit.h = state.exit.h;
+        }
+
+        // Platforms: komplett ersetzen
+        lvl.platforms.length = 0;
+        state.platforms.forEach(p => lvl.platforms.push({ x: p.x, y: p.y, w: p.w, h: p.h }));
+
+        // Spikes: komplett ersetzen
+        lvl.spikes.length = 0;
+        state.spikes.forEach(s => lvl.spikes.push({ x: s.x, y: s.y, w: s.w, h: s.h, dir: s.dir }));
+
+        // Traps: als echte Klassen-Instanzen neu erstellen
+        lvl.traps.length = 0;
+        state.traps.forEach(td => {
+            const trap = deserializeTrap(td);
+            lvl.traps.push(trap);
+        });
+    }
+
+    function pushUndo() {
+        undoStack.push({ level: currentLevel, state: cloneLevelState(LEVELS[currentLevel]) });
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        redoStack = [];
+        autoSave();
+    }
+
+    function undo() {
+        if (undoStack.length === 0) return;
+        const entry = undoStack.pop();
+        redoStack.push({ level: entry.level, state: cloneLevelState(LEVELS[entry.level]) });
+        restoreLevelState(LEVELS[entry.level], entry.state);
+        if (entry.level !== currentLevel) {
+            currentLevel = entry.level;
+            document.getElementById('levelSelect').value = currentLevel;
+        }
+        selected = null;
+        updateProps(); updateElementList(); render();
+    }
+
+    function redo() {
+        if (redoStack.length === 0) return;
+        const entry = redoStack.pop();
+        undoStack.push({ level: entry.level, state: cloneLevelState(LEVELS[entry.level]) });
+        restoreLevelState(LEVELS[entry.level], entry.state);
+        if (entry.level !== currentLevel) {
+            currentLevel = entry.level;
+            document.getElementById('levelSelect').value = currentLevel;
+        }
+        selected = null;
+        updateProps(); updateElementList(); render();
+    }
+
+    // ── ELEMENT NOTE KEY ──────────────────────────────────────
+    function noteKey(sel) {
+        if (!sel) return null;
+        return currentLevel + '-' + sel.type + '-' + sel.index;
+    }
+
+    // ── AUTO-SAVE (Änderungen überleben Refresh) ──────────
+    function autoSave() {
+        try {
+            const data = {};
+            LEVELS.forEach((lvl, i) => {
+                data[i] = cloneLevelState(lvl);
+            });
+            localStorage.setItem('editor_autosave', JSON.stringify(data));
+        } catch(e) {}
+    }
+
+    function autoLoad() {
+        try {
+            const raw = localStorage.getItem('editor_autosave');
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            const restore = confirm('Letzte Editor-Session wiederherstellen?\n\n(Ja = Weiterarbeiten wo du aufgehört hast)\n(Nein = Mit Original-Leveln starten)');
+            if (!restore) {
+                localStorage.removeItem('editor_autosave');
+                return;
+            }
+            for (const i in data) {
+                if (LEVELS[i]) {
+                    restoreLevelState(LEVELS[i], data[i]);
+                }
+            }
+        } catch(e) {}
+    }
+
+    // ── TOAST NOTIFICATION ──────────────────────────────────
+    function showToast(msg) {
+        let toast = document.getElementById('toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast';
+            toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#2ecc71;color:#000;padding:10px 24px;border-radius:6px;font-family:monospace;font-size:14px;font-weight:bold;z-index:99999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+    }
+
+    // ── INIT ──────────────────────────────────────────────────
+    function init() {
+        const sel = document.getElementById('levelSelect');
+        LEVELS.forEach((lvl, i) => {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = `Level ${i+1} — ${lvl.name}`;
+            sel.appendChild(opt);
+        });
+        sel.onchange = () => { currentLevel = +sel.value; selected = null; render(); updateElementList(); updateVariantList(); };
+
+        // Physics inputs
+        document.getElementById('phGravity').value = CFG.gravity;
+        document.getElementById('phJump').value = CFG.jumpForce;
+        document.getElementById('phSpeed').value = CFG.moveSpeed;
+        document.getElementById('phFriction').value = CFG.friction;
+
+        // Physics change handlers
+        ['phGravity','phJump','phSpeed','phFriction','phIceFric','phIceAccel','phIceSpd'].forEach(id => {
+            document.getElementById(id).onchange = () => {
+                CFG.gravity = +document.getElementById('phGravity').value;
+                CFG.jumpForce = +document.getElementById('phJump').value;
+                CFG.moveSpeed = +document.getElementById('phSpeed').value;
+                CFG.friction = +document.getElementById('phFriction').value;
+                render();
+            };
+        });
+
+        // Load saved data
+        try {
+            const saved = localStorage.getItem('editor_annotations');
+            if (saved) annotations = JSON.parse(saved);
+        } catch(e) {}
+        try {
+            const saved = localStorage.getItem('editor_notes');
+            if (saved) elementNotes = JSON.parse(saved);
+        } catch(e) {}
+        try {
+            const saved = localStorage.getItem('editor_variants');
+            if (saved) variants = JSON.parse(saved);
+        } catch(e) {}
+
+        // Gespeicherte Änderungen wiederherstellen?
+        // (Format v2 mit vollem Trap-Typ)
+        autoLoad();
+
+        updateElementList();
+        updateVariantList();
+        render();
+    }
+
+    // ── TOOL ──────────────────────────────────────────────────
+    function setTool(t) {
+        tool = t;
+        document.querySelectorAll('.tools button').forEach(b => b.classList.remove('active'));
+        document.getElementById('tool' + t.charAt(0).toUpperCase() + t.slice(1)).classList.add('active');
+        document.getElementById('addTypeRow').style.display = t === 'add' ? 'flex' : 'none';
+        edCanvas.style.cursor = t === 'select' ? 'default' : t === 'add' ? 'copy' : 'crosshair';
+    }
+
+    function togglePanel(h3) {
+        h3.nextElementSibling.classList.toggle('collapsed');
+    }
+
+    function toggleJumpArc() {
+        const cb = document.getElementById('showArc');
+        cb.checked = !cb.checked;
+        render();
+    }
+
+    // ── SNAP ──────────────────────────────────────────────────
+    function snap(v) {
+        const s = +document.getElementById('snapSize').value || 1;
+        return Math.round(v / s) * s;
+    }
+
+    // ── GET LEVEL WORLD COORDS ────────────────────────────────
+    function getZoom() { return +document.getElementById('zoomRange').value; }
+
+    function screenToWorld(sx, sy) {
+        const z = getZoom();
+        const rect = edCanvas.getBoundingClientRect();
+        const cw = edCanvas.width, ch = edCanvas.height;
+        const scaleX = cw / rect.width, scaleY = ch / rect.height;
+        return { x: (sx - rect.left) * scaleX / z, y: (sy - rect.top) * scaleY / z };
+    }
+
+    // ── HIT TEST (returns ALL elements at position) ─────────
+    function hitTestAll(wx, wy) {
+        const lvl = LEVELS[currentLevel];
+        const hits = [];
+
+        // Spikes first (smallest, hardest to click)
+        for (let i = lvl.spikes.length-1; i >= 0; i--) {
+            const s = lvl.spikes[i];
+            if (wx >= s.x && wx <= s.x+s.w && wy >= s.y && wy <= s.y+s.h)
+                hits.push({ type: 'spike', index: i, ref: s });
+        }
+
+        // Player start
+        const ps = lvl.player;
+        if (wx >= ps.x && wx <= ps.x+20 && wy >= ps.y && wy <= ps.y+20)
+            hits.push({ type: 'player', index: 0, ref: ps });
+
+        // Exit
+        if (lvl.exit) {
+            const e = lvl.exit;
+            if (wx >= e.x && wx <= e.x+e.w && wy >= e.y && wy <= e.y+e.h)
+                hits.push({ type: 'exit', index: 0, ref: e });
+        }
+
+        // Traps (small ones first)
+        const trapsBySize = [...lvl.traps.entries()].filter(([i,t]) => t.x !== undefined && t.w !== undefined);
+        trapsBySize.sort((a, b) => (a[1].w * a[1].h) - (b[1].w * b[1].h));
+        for (const [i, t] of trapsBySize) {
+            if (wx >= t.x && wx <= t.x+t.w && wy >= t.y && wy <= t.y+t.h)
+                hits.push({ type: 'trap', index: i, ref: t });
+        }
+
+        // Platforms (small ones first)
+        const platsBySize = [...lvl.platforms.entries()];
+        platsBySize.sort((a, b) => (a[1].w * a[1].h) - (b[1].w * b[1].h));
+        for (const [i, p] of platsBySize) {
+            if (wx >= p.x && wx <= p.x+p.w && wy >= p.y && wy <= p.y+p.h)
+                hits.push({ type: 'platform', index: i, ref: p });
+        }
+
+        return hits;
+    }
+
+    // Simple hit test (returns first/smallest)
+    function hitTest(wx, wy) {
+        const hits = hitTestAll(wx, wy);
+        return hits.length > 0 ? hits[0] : null;
+    }
+
+    // Cycle index for overlapping elements
+    let lastClickHits = [];
+    let cycleIndex = 0;
+
+    // ── MOUSE EVENTS ──────────────────────────────────────────
+    edCanvas.addEventListener('mousemove', (e) => {
+        if (testRunning) return;
+        const w = screenToWorld(e.clientX, e.clientY);
+        mouseX = w.x; mouseY = w.y;
+        coordsEl.textContent = `Mouse: (${Math.round(w.x)}, ${Math.round(w.y)})`;
+
+        if (dragging && selected && tool === 'select') {
+            const ref = selected.ref;
+            ref.x = snap(w.x - dragOffX);
+            ref.y = snap(w.y - dragOffY);
+            if (selected.type === 'trap' && ref.origX !== undefined) ref.origX = ref.x;
+            if (selected.type === 'trap' && ref.origY !== undefined) ref.origY = ref.y;
+            if (selected.type === 'trap' && ref.startY !== undefined) ref.startY = ref.y;
+            updateProps();
+        }
+
+        render();
+    });
+
+    edCanvas.addEventListener('mousedown', (e) => {
+        if (testRunning) return;
+        const w = screenToWorld(e.clientX, e.clientY);
+        const wx = w.x, wy = w.y;
+
+        if (tool === 'select') {
+            const hits = hitTestAll(wx, wy);
+
+            if (hits.length > 1) {
+                const sameSpot = lastClickHits.length === hits.length &&
+                    hits.every((h, i) => lastClickHits[i] && h.type === lastClickHits[i].type && h.index === lastClickHits[i].index);
+                if (sameSpot) {
+                    cycleIndex = (cycleIndex + 1) % hits.length;
+                } else {
+                    cycleIndex = 0;
+                    lastClickHits = hits;
+                }
+                selected = hits[cycleIndex];
+                infoEl.textContent = `Element ${cycleIndex+1}/${hits.length} — click again to cycle`;
+            } else {
+                selected = hits[0] || null;
+                lastClickHits = hits;
+                cycleIndex = 0;
+            }
+
+            if (selected) {
+                pushUndo();
+
+                // Alt+Click = Copy & Drag (wie Photoshop)
+                if (e.altKey && selected.type !== 'player' && selected.type !== 'exit') {
+                    const lvl = LEVELS[currentLevel];
+                    if (selected.type === 'platform') {
+                        const r = selected.ref;
+                        const copy = { x: r.x, y: r.y, w: r.w, h: r.h };
+                        lvl.platforms.push(copy);
+                        selected = { type: 'platform', index: lvl.platforms.length-1, ref: copy };
+                    } else if (selected.type === 'spike') {
+                        const r = selected.ref;
+                        const copy = { x: r.x, y: r.y, w: r.w, h: r.h, dir: r.dir };
+                        lvl.spikes.push(copy);
+                        selected = { type: 'spike', index: lvl.spikes.length-1, ref: copy };
+                    } else if (selected.type === 'trap') {
+                        const copy = cloneTrap(selected.ref, 0, 0);
+                        lvl.traps.push(copy);
+                        selected = { type: 'trap', index: lvl.traps.length-1, ref: copy };
+                    }
+                    updateElementList();
+                }
+
+                dragging = true;
+                dragOffX = wx - selected.ref.x;
+                dragOffY = wy - selected.ref.y;
+            }
+            updateProps();
+            updateElementList();
+        } else if (tool === 'add') {
+            addElement(snap(wx), snap(wy));
+        } else if (tool === 'mark') {
+            markStart = { x: snap(wx), y: snap(wy) };
+        }
+
+        render();
+    });
+
+    edCanvas.addEventListener('mouseup', (e) => {
+        if (testRunning) return;
+        if (tool === 'mark' && markStart) {
+            const w = screenToWorld(e.clientX, e.clientY);
+            const x1 = Math.min(markStart.x, snap(w.x));
+            const y1 = Math.min(markStart.y, snap(w.y));
+            const x2 = Math.max(markStart.x, snap(w.x));
+            const y2 = Math.max(markStart.y, snap(w.y));
+            if (x2 - x1 > 5 && y2 - y1 > 5) {
+                const text = prompt('Annotation text:') || 'Mark';
+                if (!annotations[currentLevel]) annotations[currentLevel] = [];
+                annotations[currentLevel].push({ x: x1, y: y1, w: x2-x1, h: y2-y1, text });
+                saveAnnotations();
+                renderAnnotationList();
+            }
+            markStart = null;
+        }
+        dragging = false;
+        render();
+    });
+
+    // ── KEYBOARD ──────────────────────────────────────────────
+    window.addEventListener('keydown', (e) => {
+        // Im Test-Modus: nur ESC abfangen (stopTest), Rest geht an die Game-Engine
+        if (testRunning) {
+            if (e.code === 'Escape') { e.preventDefault(); stopTest(); }
+            return;
+        }
+
+        // Ctrl+Z / Ctrl+Y / Ctrl+C / Ctrl+V
+        if (e.ctrlKey && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }
+        if (e.ctrlKey && e.code === 'KeyY') { e.preventDefault(); redo(); return; }
+        if (e.ctrlKey && e.code === 'KeyC') { e.preventDefault(); copySelected(); return; }
+        if (e.ctrlKey && e.code === 'KeyV') { e.preventDefault(); pasteElement(); return; }
+
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.code === 'Delete' && selected) {
+            deleteSelected();
+            e.preventDefault();
+        }
+        if (e.code === 'Escape') {
+            selected = null;
+            updateProps();
+            render();
+        }
+        // Nudge with arrow keys
+        if (selected && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) {
+            e.preventDefault();
+            pushUndo();
+            const s = e.shiftKey ? 1 : (+document.getElementById('snapSize').value || 10);
+            if (e.code === 'ArrowLeft') selected.ref.x -= s;
+            if (e.code === 'ArrowRight') selected.ref.x += s;
+            if (e.code === 'ArrowUp') selected.ref.y -= s;
+            if (e.code === 'ArrowDown') selected.ref.y += s;
+            updateProps();
+            render();
+        }
+    });
+
+    // ── ADD / DELETE ──────────────────────────────────────────
+    function addElement(x, y) {
+        pushUndo();
+        const lvl = LEVELS[currentLevel];
+        const type = document.getElementById('addType').value;
+
+        if (type === 'platform') {
+            lvl.platforms.push({ x, y, w: 100, h: 20 });
+        } else if (type === 'spike') {
+            lvl.spikes.push({ x, y, w: 20, h: 20, dir: 'up' });
+        } else if (type === 'exit') {
+            addExit(x, y);
+            return;
+        } else {
+            // Trap types — create class instance
+            let trap = null;
+            switch (type) {
+                case 'fallingFloor':    trap = new FallingFloor(x, y, 100, 20); break;
+                case 'fakeFloor':       trap = new FakeFloor(x, y, 100, 20); break;
+                case 'dodgingPlatform': trap = new DodgingPlatform(x, y, 110, 20, 250, 70); break;
+                case 'trollShaker':     trap = new TrollShaker(x, y, 100, 20); break;
+                case 'timedFloor':      trap = new TimedFloor(x, y, 100, 20, 120); break;
+                case 'togglePlatform':  trap = new TogglePlatform(x, y, 80, 20, 'A'); break;
+                case 'movingPlatform':  trap = new MovingPlatform(x, y, 80, 20, x, x + 100, 0.5); break;
+                case 'hiddenPlatform':  trap = new HiddenPlatform(x, y, 100, 20, {x: x-50, y: y-80, w: 200, h: 100}); break;
+                case 'fallingCeiling':  trap = new FallingCeiling(x, y, 60, 30, x + 30); break;
+                case 'shootingSpike':   trap = new ShootingSpike(x, y, -1, x - 100, 4); break;
+                case 'shootingSpikeDisguised': trap = new ShootingSpike(x, y, -1, x - 100, 4, null, null, true); break;
+                case 'fakeSpike':       trap = new FakeSpikes([{x, y, w: 25, h: 15, dir: 'up'}]); break;
+                case 'fakeExit':        trap = new FakeExit(x, y); break;
+                case 'killZone':        trap = new KillZone(x, y, 50, 50); break;
+                case 'risingDeath':     trap = new RisingDeath(0.3, 120); break;
+                case 'chasingWall':     trap = new ChasingWall(0.5, 90); break;
+                case 'iceZone':         trap = new IceZone(x, y, 150, 50); break;
+                case 'windZone':        trap = new WindZone(x, y, 100, 100, 0.5, 0); break;
+                case 'invertZone':      trap = new InvertZone(x, y); break;
+                case 'switch':          trap = new Switch(x, y, 'A'); break;
+                case 'movingExit':      trap = new MovingExit([{x, y: y-20}]); break;
+            }
+            if (trap) lvl.traps.push(trap);
+        }
+        updateElementList();
+        render();
+    }
+
+    function deleteSelected() {
+        if (!selected) return;
+        pushUndo();
+        const lvl = LEVELS[currentLevel];
+        if (selected.type === 'platform') lvl.platforms.splice(selected.index, 1);
+        else if (selected.type === 'spike') lvl.spikes.splice(selected.index, 1);
+        else if (selected.type === 'trap') lvl.traps.splice(selected.index, 1);
+        selected = null;
+        updateProps();
+        updateElementList();
+        render();
+    }
+
+    function deleteExit() {
+        pushUndo();
+        LEVELS[currentLevel].exit = null;
+        selected = null;
+        updateProps();
+        updateElementList();
+        render();
+    }
+
+    function addExit(x, y) {
+        pushUndo();
+        LEVELS[currentLevel].exit = { x, y, w: 30, h: 40 };
+        updateElementList();
+        render();
+    }
+
+    // ── PROPERTIES PANEL ─────────────────────────────────────
+    function updateProps() {
+        const body = document.getElementById('propsBody');
+        if (!selected) {
+            body.innerHTML = '<div style="color:#555;font-size:11px;">Click an element to select</div>';
+            return;
+        }
+        const r = selected.ref;
+        const typeLabel = selected.type.toUpperCase() + (r.type ? ` (${r.type})` : '') + (r.dir ? ` [${r.dir}]` : '');
+
+        let html = `<div style="color:#2ecc71;font-size:12px;margin-bottom:6px;">${typeLabel}</div>`;
+        html += propRow('X', r.x);
+        html += propRow('Y', r.y);
+        if (r.w !== undefined) html += propRow('W', r.w);
+        if (r.h !== undefined) html += propRow('H', r.h);
+        if (r.dir !== undefined) {
+            html += `<div class="row"><label>Dir:</label><select onchange="selected.ref.dir=this.value;render()">
+                <option ${r.dir==='up'?'selected':''}>up</option>
+                <option ${r.dir==='down'?'selected':''}>down</option>
+                <option ${r.dir==='left'?'selected':''}>left</option>
+                <option ${r.dir==='right'?'selected':''}>right</option>
+            </select></div>`;
+        }
+        // Trap-spezifische Parameter (Trigger, Speed, etc.)
+        if (selected.type === 'trap' && r.type) {
+            const params = getTrapParams(r);
+            if (params.length > 0) {
+                html += `<div style="margin-top:8px;border-top:1px solid #333;padding-top:6px;">
+                    <div style="color:#f1c40f;font-size:11px;margin-bottom:4px;">Trigger / Behavior:</div>`;
+                params.forEach(p => {
+                    if (p.isDropdown) {
+                        html += `<div class="row">
+                            <label title="${p.desc}">${p.label}:</label>
+                            <select onchange="pushUndo(); setTrapProp('${p.key}', this.value); updateProps(); render();">
+                                ${p.options.map(o => `<option value="${o}" ${String(p.value) === String(o) ? 'selected' : ''}>${o}</option>`).join('')}
+                            </select>
+                        </div>`;
+                    } else if (p.key.startsWith('_area')) {
+                        const areaProp = p.key.replace('_area', '').toLowerCase();
+                        html += `<div class="row">
+                            <label title="${p.desc}">${p.label}:</label>
+                            <input type="number" value="${p.value}" step="${p.step || 1}"
+                                onchange="pushUndo(); if(!selected.ref.triggerArea) selected.ref.triggerArea={}; selected.ref.triggerArea['${areaProp}'] = +this.value; render();">
+                        </div>`;
+                    } else {
+                        html += `<div class="row">
+                            <label title="${p.desc}">${p.label}:</label>
+                            <input type="number" value="${p.value}" step="${p.step || 1}"
+                                onchange="pushUndo(); selected.ref['${p.key}'] = +this.value; render();">
+                        </div>`;
+                    }
+                });
+                html += `</div>`;
+            }
+        }
+
+        // MovingExit Waypoints
+        if (r.type === 'movingExit' && r.positions) {
+            html += `<div style="margin-top:8px;border-top:1px solid #333;padding-top:6px;">
+                <div style="color:#2ecc71;font-size:11px;margin-bottom:4px;">Waypoints (last = STOP):</div>`;
+            r.positions.forEach((p, pi) => {
+                const isLast = pi === r.positions.length - 1;
+                html += `<div class="row" style="margin-bottom:3px;">
+                    <label style="width:40px;">${isLast ? 'STOP' : '#' + (pi+1)}:</label>
+                    <input type="number" value="${p.x}" style="width:55px;" onchange="updateWaypoint(${pi},'x',+this.value)">
+                    <input type="number" value="${p.y}" style="width:55px;" onchange="updateWaypoint(${pi},'y',+this.value)">
+                    ${r.positions.length > 1 ? `<span style="color:#e74c3c;cursor:pointer;font-size:14px;" onclick="removeWaypoint(${pi})">X</span>` : ''}
+                </div>`;
+            });
+            html += `<button onclick="addWaypoint()" style="width:100%;margin-top:4px;">+ Add Waypoint</button>
+            </div>`;
+        }
+
+        // Element Note
+        const nk = noteKey(selected);
+        const note = elementNotes[nk] || '';
+        html += `<div style="margin-top:8px;"><label style="font-size:11px;color:#888;">Note:</label>
+            <textarea id="elemNote" rows="2" placeholder="Notiz zu diesem Element..."
+                onchange="saveElemNote(this.value)">${note}</textarea></div>`;
+
+        if (selected.type !== 'player') {
+            if (selected.type === 'exit') {
+                html += `<button class="danger" onclick="deleteExit()" style="margin-top:8px;width:100%;">Remove Exit (for MovingExit)</button>`;
+            } else {
+                html += `<button class="danger" onclick="deleteSelected()" style="margin-top:8px;width:100%;">Delete</button>`;
+            }
+        }
+        body.innerHTML = html;
+
+        // Bind inputs
+        body.querySelectorAll('input[data-prop]').forEach(inp => {
+            inp.onchange = () => {
+                selected.ref[inp.dataset.prop] = +inp.value;
+                if (inp.dataset.prop === 'x' && selected.ref.origX !== undefined) selected.ref.origX = +inp.value;
+                if (inp.dataset.prop === 'y' && selected.ref.origY !== undefined) selected.ref.origY = +inp.value;
+                render();
+            };
+        });
+    }
+
+    function propRow(label, value) {
+        const prop = label.toLowerCase();
+        return `<div class="row"><label>${label}:</label><input type="number" value="${Math.round(value)}" data-prop="${prop}"></div>`;
+    }
+
+    // ── ELEMENT LIST ─────────────────────────────────────────
+    function updateElementList() {
+        const el = document.getElementById('elements');
+        const lvl = LEVELS[currentLevel];
+        let html = '';
+
+        html += elemItem('player', 0, `Player (${lvl.player.x}, ${lvl.player.y})`, 'color:#3498db');
+        if (lvl.exit) html += elemItem('exit', 0, `Exit (${lvl.exit.x}, ${lvl.exit.y})`, 'color:#2ecc71');
+
+        lvl.platforms.forEach((p, i) => {
+            const isWall = (p.w <= 10 && p.h >= 400) || (p.h <= 10 && p.w >= 700);
+            const label = isWall ? 'Wall' : 'Platform';
+            html += elemItem('platform', i, `${label} (${p.x},${p.y} ${p.w}x${p.h})`, 'color:#d0d0d0');
+        });
+        lvl.spikes.forEach((s, i) => {
+            html += elemItem('spike', i, `Spike ${s.dir} (${s.x},${s.y})`, 'color:#e74c3c');
+        });
+        lvl.traps.forEach((t, i) => {
+            html += elemItem('trap', i, `${t.type||'trap'} (${Math.round(t.x)},${Math.round(t.y)})`, 'color:#f1c40f');
+        });
+
+        el.innerHTML = html;
+    }
+
+    function elemItem(type, index, label, style) {
+        const isSel = selected && selected.type === type && selected.index === index;
+        return `<div class="elem-item ${isSel?'selected':''}" style="${style}"
+            onclick="selectByIndex('${type}',${index})">${label}</div>`;
+    }
+
+    function selectByIndex(type, index) {
+        const lvl = LEVELS[currentLevel];
+        let ref;
+        if (type === 'player') ref = lvl.player;
+        else if (type === 'exit') ref = lvl.exit;
+        else if (type === 'platform') ref = lvl.platforms[index];
+        else if (type === 'spike') ref = lvl.spikes[index];
+        else if (type === 'trap') ref = lvl.traps[index];
+        selected = { type, index, ref };
+        updateProps();
+        updateElementList();
+        render();
+    }
+
+    // ── ANNOTATIONS ──────────────────────────────────────────
+    function saveAnnotations() {
+        localStorage.setItem('editor_annotations', JSON.stringify(annotations));
+    }
+
+    function renderAnnotationList() {
+        const el = document.getElementById('annotations');
+        const annos = annotations[currentLevel] || [];
+        el.innerHTML = annos.map((a, i) =>
+            `<div class="anno-item"><span>${a.text} (${a.x},${a.y} ${a.w}x${a.h})</span><span class="del" onclick="deleteAnnotation(${i})">X</span></div>`
+        ).join('');
+    }
+
+    function deleteAnnotation(i) {
+        if (annotations[currentLevel]) {
+            annotations[currentLevel].splice(i, 1);
+            saveAnnotations();
+            renderAnnotationList();
+            render();
+        }
+    }
+
+    // ── RENDER ────────────────────────────────────────────────
+    function render() {
+        const lvl = LEVELS[currentLevel];
+        const z = getZoom();
+        document.getElementById('zoomLabel').textContent = z + 'x';
+
+        // Resize canvas for level size
+        const lvlW = lvl.width || 800;
+        const lvlH = lvl.height || 500;
+        edCanvas.width = lvlW * z;
+        edCanvas.height = lvlH * z;
+
+        cx.save();
+        cx.scale(z, z);
+
+        // Background
+        cx.fillStyle = '#2a2a4a';
+        cx.fillRect(0, 0, lvlW, lvlH);
+
+        // Grid
+        if (document.getElementById('showGrid').checked) {
+            cx.strokeStyle = 'rgba(255,255,255,0.06)';
+            cx.lineWidth = 0.5;
+            const gs = 50;
+            for (let x = 0; x <= lvlW; x += gs) {
+                cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, lvlH); cx.stroke();
+            }
+            for (let y = 0; y <= lvlH; y += gs) {
+                cx.beginPath(); cx.moveTo(0, y); cx.lineTo(lvlW, y); cx.stroke();
+            }
+            // Grid labels
+            cx.fillStyle = 'rgba(255,255,255,0.15)';
+            cx.font = '9px monospace';
+            for (let x = 0; x <= lvlW; x += 100) {
+                cx.fillText(x, x+2, 10);
+            }
+            for (let y = 100; y <= lvlH; y += 100) {
+                cx.fillText(y, 2, y-2);
+            }
+        }
+
+        // Platforms
+        lvl.platforms.forEach((p, i) => {
+            const isSel = selected && selected.type === 'platform' && selected.index === i;
+            cx.fillStyle = isSel ? '#fff' : '#d0d0d0';
+            cx.fillRect(p.x, p.y, p.w, p.h);
+            cx.fillStyle = isSel ? '#2ecc71' : '#e8e8e8';
+            cx.fillRect(p.x, p.y, p.w, 3);
+            if (isSel) {
+                cx.strokeStyle = '#2ecc71';
+                cx.lineWidth = 2;
+                cx.strokeRect(p.x-1, p.y-1, p.w+2, p.h+2);
+            }
+            // Label
+            cx.fillStyle = 'rgba(255,255,255,0.3)';
+            cx.font = '8px monospace';
+            cx.fillText(`${p.w}x${p.h}`, p.x+2, p.y+p.h-2);
+        });
+
+        // Traps
+        lvl.traps.forEach((t, i) => {
+            const isSel = selected && selected.type === 'trap' && selected.index === i;
+            if (t.x === undefined) return;
+
+            // Color by type
+            let color = '#f1c40f';
+            if (t.type === 'fallingFloor' || t.type === 'timedFloor' || t.type === 'triggerFloor') color = '#e67e22';
+            else if (t.type === 'fakeFloor') color = '#9b59b6';
+            else if (t.type === 'fakeExit') color = '#c0392b';
+            else if (t.type === 'iceZone') color = '#3498db';
+            else if (t.type === 'dodgingPlatform') color = '#1abc9c';
+            else if (t.type === 'fakeSpikes') { color = '#e74c3c'; cx.globalAlpha = 0.4; }
+
+            // Spezial-Rendering für Spike-Traps
+            if (t.type === 'shootingSpike' || t.type === 'movingSpike') {
+                cx.fillStyle = '#e74c3c';
+                cx.globalAlpha = 0.8;
+                const d = t.dir;
+                const sDir = (d === 'right' || d === 1) ? 'right' : (d === 'up') ? 'up' : (d === 'down') ? 'down' : 'left';
+
+                // Spike-Dreieck in Schussrichtung zeichnen
+                function drawEditorSpike(x, y, w, h, dir) {
+                    cx.beginPath();
+                    if (dir === 'right') { cx.moveTo(x, y); cx.lineTo(x+w, y+h/2); cx.lineTo(x, y+h); }
+                    else if (dir === 'left') { cx.moveTo(x+w, y); cx.lineTo(x, y+h/2); cx.lineTo(x+w, y+h); }
+                    else if (dir === 'up') { cx.moveTo(x, y+h); cx.lineTo(x+w/2, y); cx.lineTo(x+w, y+h); }
+                    else { cx.moveTo(x, y); cx.lineTo(x+w/2, y+h); cx.lineTo(x+w, y); }
+                    cx.closePath(); cx.fill();
+                }
+
+                if (t.type === 'movingSpike') {
+                    drawEditorSpike(t.x, t.y, t.w, t.h, 'up');
+                } else {
+                    drawEditorSpike(t.x, t.y, t.w, t.h, sDir);
+
+                    // Disguised: extra "(D)" Label
+                    if (t.disguised) {
+                        cx.fillStyle = '#f1c40f'; cx.font = 'bold 8px monospace';
+                        cx.fillText('D', t.x + t.w/2 - 3, t.y + t.h + 10);
+                    }
+                    // Hidden: extra "(H)" Label
+                    if (!t.disguised) {
+                        cx.fillStyle = '#888'; cx.font = '8px monospace';
+                        cx.fillText('H', t.x + t.w/2 - 3, t.y + t.h + 10);
+                    }
+                }
+                cx.globalAlpha = 1;
+            } else {
+                cx.fillStyle = color;
+                cx.globalAlpha = (cx.globalAlpha < 1) ? cx.globalAlpha : 0.5;
+                cx.fillRect(t.x, t.y, t.w, t.h);
+                cx.globalAlpha = 1;
+            }
+
+            // Border
+            cx.strokeStyle = isSel ? '#2ecc71' : color;
+            cx.lineWidth = isSel ? 2 : 1;
+            cx.setLineDash([4, 3]);
+            cx.strokeRect(t.x, t.y, t.w, t.h);
+            cx.setLineDash([]);
+
+            // Label
+            cx.fillStyle = color;
+            cx.font = '9px monospace';
+            cx.fillText(t.type || 'trap', t.x+2, t.y - 3);
+
+            // FakeSpikes: draw the individual spikes
+            if (t.type === 'fakeSpikes' && t.spikes) {
+                cx.globalAlpha = 0.4;
+                t.spikes.forEach(s => drawSpikeShape(s, '#e74c3c'));
+                cx.globalAlpha = 1;
+            }
+        });
+
+        // Spikes
+        lvl.spikes.forEach((s, i) => {
+            const isSel = selected && selected.type === 'spike' && selected.index === i;
+            drawSpikeShape(s, isSel ? '#ff6b6b' : '#e74c3c');
+            if (isSel) {
+                cx.strokeStyle = '#2ecc71';
+                cx.lineWidth = 2;
+                cx.strokeRect(s.x-1, s.y-1, s.w+2, s.h+2);
+            }
+        });
+
+        // Exit
+        if (lvl.exit) {
+            const e = lvl.exit;
+            const isSel = selected && selected.type === 'exit';
+            // Glow
+            cx.fillStyle = 'rgba(46, 204, 113, 0.2)';
+            cx.fillRect(e.x-4, e.y-4, e.w+8, e.h+8);
+            // Body
+            cx.fillStyle = isSel ? '#2ecc71' : '#27ae60';
+            cx.fillRect(e.x, e.y, e.w, e.h);
+            // Frame
+            cx.strokeStyle = '#2ecc71';
+            cx.lineWidth = isSel ? 3 : 2;
+            cx.strokeRect(e.x, e.y, e.w, e.h);
+            // Label
+            cx.fillStyle = '#fff';
+            cx.font = 'bold 9px monospace';
+            cx.fillText('EXIT', e.x, e.y - 4);
+        }
+
+        // Player start
+        const ps = lvl.player;
+        const isSel = selected && selected.type === 'player';
+        cx.fillStyle = isSel ? '#5dade2' : '#3498db';
+        cx.fillRect(ps.x, ps.y, 20, 20);
+        cx.strokeStyle = isSel ? '#2ecc71' : '#2980b9';
+        cx.lineWidth = isSel ? 3 : 2;
+        cx.strokeRect(ps.x, ps.y, 20, 20);
+        cx.fillStyle = '#fff';
+        cx.font = 'bold 9px monospace';
+        cx.fillText('START', ps.x, ps.y - 4);
+
+        // Jump arc preview
+        if (document.getElementById('showArc').checked) {
+            drawJumpArc(ps.x + 10, ps.y);
+            // Also draw from selected platform
+            if (selected && (selected.type === 'platform' || selected.type === 'trap') && selected.ref.w) {
+                const r = selected.ref;
+                drawJumpArc(r.x + r.w/2, r.y);  // from center
+                drawJumpArc(r.x, r.y);           // from left edge
+                drawJumpArc(r.x + r.w, r.y);    // from right edge
+            }
+        }
+
+        // Annotations
+        const annos = annotations[currentLevel] || [];
+        annos.forEach(a => {
+            cx.fillStyle = 'rgba(241, 196, 15, 0.15)';
+            cx.fillRect(a.x, a.y, a.w, a.h);
+            cx.strokeStyle = '#f1c40f';
+            cx.lineWidth = 2;
+            cx.setLineDash([6, 4]);
+            cx.strokeRect(a.x, a.y, a.w, a.h);
+            cx.setLineDash([]);
+            cx.fillStyle = '#f1c40f';
+            cx.font = 'bold 11px monospace';
+            cx.fillText(a.text, a.x + 4, a.y + 14);
+        });
+
+        // Active mark drawing
+        if (markStart && tool === 'mark') {
+            const x1 = Math.min(markStart.x, mouseX);
+            const y1 = Math.min(markStart.y, mouseY);
+            const w = Math.abs(mouseX - markStart.x);
+            const h = Math.abs(mouseY - markStart.y);
+            cx.fillStyle = 'rgba(241, 196, 15, 0.1)';
+            cx.fillRect(x1, y1, w, h);
+            cx.strokeStyle = '#f1c40f';
+            cx.lineWidth = 1;
+            cx.setLineDash([4, 4]);
+            cx.strokeRect(x1, y1, w, h);
+            cx.setLineDash([]);
+        }
+
+        // Trigger-Visualisierung NUR für ausgewähltes Element
+        if (selected && selected.type === 'trap') {
+            const t = selected.ref;
+            const tcx = t.x + (t.w||30)/2;
+            const tcy = t.y + (t.h||20)/2;
+
+            // Trigger-Modus Visualisierung
+            if (t.triggerMode) {
+                cx.strokeStyle = 'rgba(241, 196, 15, 0.6)';
+                cx.lineWidth = 1;
+                cx.setLineDash([4, 4]);
+
+                if (t.triggerMode === 'x' && t.triggerX !== undefined) {
+                    // Vertikale Linie
+                    cx.beginPath(); cx.moveTo(t.triggerX, 0); cx.lineTo(t.triggerX, lvlH); cx.stroke();
+                    cx.fillStyle = '#f1c40f'; cx.font = '9px monospace';
+                    cx.fillText('X: ' + t.triggerX, t.triggerX + 4, 15);
+                } else if (t.triggerMode === 'y' && t.triggerY !== undefined) {
+                    // Horizontale Linie
+                    cx.beginPath(); cx.moveTo(0, t.triggerY); cx.lineTo(lvlW, t.triggerY); cx.stroke();
+                    cx.fillStyle = '#f1c40f'; cx.font = '9px monospace';
+                    cx.fillText('Y: ' + t.triggerY, 5, t.triggerY - 4);
+                } else if (t.triggerMode === 'proximity') {
+                    // Kreis
+                    cx.beginPath(); cx.arc(tcx, tcy, t.triggerDist, 0, Math.PI * 2); cx.stroke();
+                    cx.fillStyle = 'rgba(241, 196, 15, 0.06)';
+                    cx.beginPath(); cx.arc(tcx, tcy, t.triggerDist, 0, Math.PI * 2); cx.fill();
+                    cx.fillStyle = '#f1c40f'; cx.font = '9px monospace';
+                    cx.fillText(t.triggerDist + 'px', tcx + t.triggerDist + 4, tcy);
+                } else if (t.triggerMode === 'area' && t.triggerArea) {
+                    // Rechteck
+                    const a = t.triggerArea;
+                    cx.fillStyle = 'rgba(241, 196, 15, 0.08)';
+                    cx.fillRect(a.x, a.y, a.w, a.h);
+                    cx.strokeRect(a.x, a.y, a.w, a.h);
+                    cx.fillStyle = '#f1c40f'; cx.font = '9px monospace';
+                    cx.fillText('area', a.x + 3, a.y - 3);
+                }
+                cx.setLineDash([]);
+            }
+
+            // DodgingPlatform: Trigger-Zone + Dodge-Ziel
+            if (t.type === 'dodgingPlatform') {
+                if (t.triggerRange) {
+                    cx.fillStyle = 'rgba(241, 196, 15, 0.1)';
+                    cx.fillRect(tcx - t.triggerRange, t.y - 80, t.triggerRange * 2, 80);
+                    cx.strokeStyle = 'rgba(241, 196, 15, 0.4)'; cx.lineWidth = 1;
+                    cx.setLineDash([4, 4]);
+                    cx.strokeRect(tcx - t.triggerRange, t.y - 80, t.triggerRange * 2, 80);
+                    cx.setLineDash([]);
+                    cx.fillStyle = '#f1c40f'; cx.font = '8px monospace';
+                    cx.fillText('trigger (in air)', tcx - t.triggerRange + 2, t.y - 68);
+                }
+                if (t.dodgeX !== undefined) {
+                    cx.strokeStyle = 'rgba(231, 76, 60, 0.6)'; cx.lineWidth = 2;
+                    cx.setLineDash([6, 4]);
+                    cx.beginPath(); cx.moveTo(tcx, t.y + t.h/2); cx.lineTo(t.dodgeX + t.w/2, t.y + t.h/2); cx.stroke();
+                    cx.setLineDash([]);
+                    cx.strokeStyle = 'rgba(231, 76, 60, 0.3)';
+                    cx.strokeRect(t.dodgeX, t.y, t.w, t.h);
+                    cx.fillStyle = '#e74c3c'; cx.font = '8px monospace';
+                    cx.fillText('dodge to', t.dodgeX + 2, t.y - 3);
+                }
+            }
+
+            // MovingPlatform: Linie zum Ziel
+            if (t.type === 'movingPlatform' && t.targetX !== undefined) {
+                cx.strokeStyle = 'rgba(26, 188, 156, 0.5)'; cx.lineWidth = 2;
+                cx.setLineDash([6, 4]);
+                cx.beginPath(); cx.moveTo(tcx, t.y + t.h/2); cx.lineTo(t.targetX + t.w/2, (t.targetY||t.y) + t.h/2); cx.stroke();
+                cx.setLineDash([]);
+                cx.strokeStyle = 'rgba(26, 188, 156, 0.4)';
+                cx.strokeRect(t.targetX, t.targetY||t.y, t.w, t.h);
+            }
+        }
+
+        // MovingExit Waypoints zeichnen
+        lvl.traps.forEach((t, i) => {
+            if (t.type === 'movingExit' && t.positions) {
+                const isSel = selected && selected.type === 'trap' && selected.index === i;
+                const pts = t.positions;
+                // Verbindungslinien
+                cx.strokeStyle = isSel ? '#2ecc71' : 'rgba(46, 204, 113, 0.4)';
+                cx.lineWidth = isSel ? 2 : 1;
+                cx.setLineDash([6, 4]);
+                cx.beginPath();
+                cx.moveTo(pts[0].x + 15, pts[0].y + 20);
+                for (let p = 1; p < pts.length; p++) {
+                    cx.lineTo(pts[p].x + 15, pts[p].y + 20);
+                }
+                cx.stroke();
+                cx.setLineDash([]);
+
+                // Waypoints als Kreise
+                pts.forEach((p, pi) => {
+                    const isLast = pi === pts.length - 1;
+                    // Kreis
+                    cx.beginPath();
+                    cx.arc(p.x + 15, p.y + 20, isLast ? 8 : 6, 0, Math.PI * 2);
+                    cx.fillStyle = isLast ? '#2ecc71' : 'rgba(46, 204, 113, 0.6)';
+                    cx.fill();
+                    cx.strokeStyle = '#fff';
+                    cx.lineWidth = 1;
+                    cx.stroke();
+                    // Label
+                    cx.fillStyle = '#fff';
+                    cx.font = 'bold 8px monospace';
+                    cx.textAlign = 'center';
+                    cx.fillText(isLast ? 'STOP' : (pi + 1), p.x + 15, p.y + 23);
+                    cx.textAlign = 'left';
+                    // Koordinaten
+                    if (isSel) {
+                        cx.fillStyle = 'rgba(255,255,255,0.5)';
+                        cx.font = '8px monospace';
+                        cx.fillText(`(${p.x},${p.y})`, p.x + 25, p.y + 15);
+                    }
+                });
+            }
+        });
+
+        // Element Notes on canvas
+        const allElems = [];
+        lvl.platforms.forEach((p, i) => allElems.push({ type: 'platform', index: i, ref: p }));
+        lvl.spikes.forEach((s, i) => allElems.push({ type: 'spike', index: i, ref: s }));
+        lvl.traps.forEach((t, i) => allElems.push({ type: 'trap', index: i, ref: t }));
+        allElems.push({ type: 'player', index: 0, ref: lvl.player });
+        if (lvl.exit) allElems.push({ type: 'exit', index: 0, ref: lvl.exit });
+        allElems.forEach(el => {
+            const nk = currentLevel + '-' + el.type + '-' + el.index;
+            const note = elementNotes[nk];
+            if (note && el.ref.x !== undefined) {
+                const nx = el.ref.x + (el.ref.w || 20) + 4;
+                const ny = el.ref.y + 4;
+                // Background
+                cx.fillStyle = 'rgba(0,0,0,0.7)';
+                const tw = cx.measureText(note).width;
+                cx.font = '9px monospace';
+                cx.fillRect(nx - 2, ny - 9, tw + 6, 12);
+                // Text
+                cx.fillStyle = '#f1c40f';
+                cx.fillText(note, nx, ny);
+            }
+        });
+
+        // Hover info
+        if (tool === 'select' && !dragging) {
+            const hit = hitTest(mouseX, mouseY);
+            if (hit && hit !== selected) {
+                cx.strokeStyle = 'rgba(255,255,255,0.4)';
+                cx.lineWidth = 1;
+                cx.setLineDash([3, 3]);
+                cx.strokeRect(hit.ref.x-1, hit.ref.y-1, (hit.ref.w||20)+2, (hit.ref.h||20)+2);
+                cx.setLineDash([]);
+            }
+        }
+
+        cx.restore();
+
+        // Update info
+        infoEl.textContent = `Level ${currentLevel+1} "${LEVELS[currentLevel].name}" | ${lvlW}x${lvlH}`;
+        renderAnnotationList();
+    }
+
+    // ── DRAW HELPERS ─────────────────────────────────────────
+    function drawSpikeShape(s, color) {
+        cx.fillStyle = color;
+        cx.beginPath();
+        if (s.dir === 'up') {
+            cx.moveTo(s.x, s.y + s.h);
+            cx.lineTo(s.x + s.w/2, s.y);
+            cx.lineTo(s.x + s.w, s.y + s.h);
+        } else if (s.dir === 'down') {
+            cx.moveTo(s.x, s.y);
+            cx.lineTo(s.x + s.w/2, s.y + s.h);
+            cx.lineTo(s.x + s.w, s.y);
+        } else if (s.dir === 'left') {
+            cx.moveTo(s.x + s.w, s.y);
+            cx.lineTo(s.x, s.y + s.h/2);
+            cx.lineTo(s.x + s.w, s.y + s.h);
+        } else {
+            cx.moveTo(s.x, s.y);
+            cx.lineTo(s.x + s.w, s.y + s.h/2);
+            cx.lineTo(s.x, s.y + s.h);
+        }
+        cx.closePath();
+        cx.fill();
+    }
+
+    function drawJumpArc(startX, startY) {
+        const g = +document.getElementById('phGravity').value || CFG.gravity;
+        const jf = +document.getElementById('phJump').value || CFG.jumpForce;
+        const spd = +document.getElementById('phSpeed').value || CFG.moveSpeed;
+
+        // Right arc
+        cx.strokeStyle = 'rgba(46, 204, 113, 0.4)';
+        cx.lineWidth = 1.5;
+        cx.setLineDash([3, 3]);
+        cx.beginPath();
+        let vy = jf, x = startX, y = startY;
+        cx.moveTo(x, y);
+        for (let f = 0; f < 80; f++) {
+            vy += g;
+            x += spd;
+            y += vy;
+            cx.lineTo(x, y);
+            if (y > startY + 10) break;
+        }
+        cx.stroke();
+
+        // Left arc
+        cx.beginPath();
+        vy = jf; x = startX; y = startY;
+        cx.moveTo(x, y);
+        for (let f = 0; f < 80; f++) {
+            vy += g;
+            x -= spd;
+            y += vy;
+            cx.lineTo(x, y);
+            if (y > startY + 10) break;
+        }
+        cx.stroke();
+        cx.setLineDash([]);
+    }
+
+    // ── EXPORT ────────────────────────────────────────────────
+    function trapToCode(t) {
+        const x = Math.round(t.x), y = Math.round(t.y);
+        const w = Math.round(t.w || 0), h = Math.round(t.h || 0);
+        switch (t.type) {
+            case 'fallingFloor':    return `new FallingFloor(${x}, ${y}, ${w}, ${h})`;
+            case 'fakeFloor':       return `new FakeFloor(${x}, ${y}, ${w}, ${h})`;
+            case 'trollShaker':     return `new TrollShaker(${x}, ${y}, ${w}, ${h})`;
+            case 'timedFloor':      return `new TimedFloor(${x}, ${y}, ${w}, ${h}, ${t.delay || 120})`;
+            case 'togglePlatform':  return `new TogglePlatform(${x}, ${y}, ${w}, ${h}, '${t.group || 'A'}')`;
+            case 'hiddenPlatform':  return `new HiddenPlatform(${x}, ${y}, ${w}, ${h}, {x: ${x-50}, y: ${y-80}, w: 200, h: 100})`;
+            case 'dodgingPlatform': return `new DodgingPlatform(${x}, ${y}, ${w}, ${h}, ${t.dodgeX || x+100}, ${t.triggerRange || 80})`;
+            case 'movingPlatform':  return `new MovingPlatform(${x}, ${y}, ${w}, ${h}, ${x}, ${t.targetX || x+100}, ${t.speed || 0.5})`;
+            case 'fallingCeiling':  return `new FallingCeiling(${x}, ${y}, ${w}, ${h}, ${t.triggerX || x}${t.fake ? ', true' : ''})`;
+            case 'shootingSpike': {
+                const dir = typeof t.dir === 'string' ? `'${t.dir}'` : t.dir;
+                let code = `new ShootingSpike(${x}, ${y}, ${dir}, ${t.triggerX || x}, ${t.speed || 4}`;
+                if (t.disguised) code += `, null, null, true`;
+                code += ')';
+                if (t.triggerMode && t.triggerMode !== 'x') {
+                    code = `Object.assign(${code}, { triggerMode: '${t.triggerMode}'`;
+                    if (t.triggerMode === 'proximity') code += `, triggerDist: ${t.triggerDist || 80}`;
+                    if (t.triggerMode === 'y') code += `, triggerY: ${t.triggerY || y}`;
+                    if (t.triggerMode === 'area' && t.triggerArea) code += `, triggerArea: {x:${t.triggerArea.x},y:${t.triggerArea.y},w:${t.triggerArea.w},h:${t.triggerArea.h}}`;
+                    code += ' })';
+                }
+                return code;
+            }
+            case 'fakeExit':        return `new FakeExit(${x}, ${y})`;
+            case 'killZone':        return `new KillZone(${x}, ${y}, ${w}, ${h})`;
+            case 'risingDeath':     return `new RisingDeath(${t.speed || 0.3}, ${t.startDelay || 120}${t.startY ? ', ' + t.startY : ''})`;
+            case 'chasingWall':     return `new ChasingWall(${t.speed || 0.5}, ${t.startDelay || 90})`;
+            case 'iceZone':         return `new IceZone(${x}, ${y}, ${w}, ${h})`;
+            case 'windZone':        return `new WindZone(${x}, ${y}, ${w}, ${h}, ${t.vx || 0}, ${t.vy || 0})`;
+            case 'invertZone':      return `new InvertZone(${x}, ${y})`;
+            case 'switch':          return `new Switch(${x}, ${y}, '${t.group || 'A'}')`;
+            case 'movingExit': {
+                const pts = (t.positions || [{x, y}]).map(p => `{x:${Math.round(p.x)}, y:${Math.round(p.y)}}`).join(', ');
+                let code = `new MovingExit([${pts}])`;
+                if (t.triggerDist && t.triggerDist !== 55) {
+                    code = `Object.assign(${code}, { triggerDist: ${t.triggerDist} })`;
+                }
+                return code;
+            }
+            case 'fakeSpikes': {
+                const spks = (t.spikes || []).map(s => `{x:${Math.round(s.x)}, y:${Math.round(s.y)}, w:${s.w}, h:${s.h}, dir:'${s.dir}'}`).join(', ');
+                return `new FakeSpikes([${spks}])`;
+            }
+            case 'movingSpike':     return `new MovingSpike(${t.x1||x}, ${t.y1||y}, ${t.x2||x+100}, ${t.y2||y}, ${t.speed || 0.01})`;
+            default:                return `// UNKNOWN TRAP: ${t.type} at (${x}, ${y})`;
+        }
+    }
+
+    function exportCode() {
+        const lvl = LEVELS[currentLevel];
+        let code = `LEVELS.push({\n`;
+        code += `    name: '${lvl.name}',\n`;
+        code += `    player: { x: ${lvl.player.x}, y: ${lvl.player.y} },\n`;
+
+        if (lvl.exit) code += `    exit: { x: ${lvl.exit.x}, y: ${lvl.exit.y}, w: ${lvl.exit.w}, h: ${lvl.exit.h} },\n`;
+        if (lvl.width) code += `    width: ${lvl.width},\n`;
+        if (lvl.height) code += `    height: ${lvl.height},\n`;
+        if (lvl.autoRun) code += `    autoRun: ${lvl.autoRun},\n`;
+        if (lvl.flappyMode) code += `    flappyMode: true,\n`;
+        if (lvl.verticalScroll) code += `    verticalScroll: true,\n`;
+        if (lvl.autoScroll) code += `    autoScroll: { speed: ${lvl.autoScroll.speed} },\n`;
+        if (lvl.noLeft) code += `    noLeft: true,\n`;
+
+        code += `    platforms: [\n`;
+        lvl.platforms.forEach(p => {
+            code += `        { x: ${p.x}, y: ${p.y}, w: ${p.w}, h: ${p.h} },\n`;
+        });
+        code += `    ],\n`;
+
+        code += `    spikes: [\n`;
+        lvl.spikes.forEach(s => {
+            code += `        { x: ${s.x}, y: ${s.y}, w: ${s.w}, h: ${s.h}, dir: '${s.dir}' },\n`;
+        });
+        code += `    ],\n`;
+
+        code += `    traps: [\n`;
+        lvl.traps.forEach(t => {
+            code += '        ' + trapToCode(t) + ',\n';
+        });
+        code += `    ],\n`;
+        code += `});\n`;
+
+        navigator.clipboard.writeText(code).then(() => alert('Level code copied!'));
+    }
+
+    // ── TRAP PARAMETER DEFINITIONS ──────────────────────────
+    function getTrapParams(trap) {
+        const p = [];
+        const t = trap.type;
+
+        // Trigger Mode (wenn vorhanden)
+        if (trap.triggerMode !== undefined) {
+            p.push({ key: 'triggerMode', label: 'Trigger', desc: 'Auslöse-Modus', value: trap.triggerMode, isDropdown: true, options: ['x', 'y', 'proximity', 'area'] });
+
+            // Nur Parameter des aktiven Modus zeigen
+            if (trap.triggerMode === 'x' && trap.triggerX !== undefined)
+                p.push({ key: 'triggerX', label: 'X Position', desc: 'Vertikale Trigger-Linie', value: trap.triggerX, step: 10 });
+            if (trap.triggerMode === 'y')
+                p.push({ key: 'triggerY', label: 'Y Position', desc: 'Horizontale Trigger-Linie', value: trap.triggerY || 0, step: 10 });
+            if (trap.triggerMode === 'proximity')
+                p.push({ key: 'triggerDist', label: 'Radius', desc: 'Auslöse-Radius um das Objekt', value: trap.triggerDist, step: 5 });
+            if (trap.triggerMode === 'area') {
+                if (!trap.triggerArea) trap.triggerArea = { x: trap.x - 50, y: trap.y - 50, w: 120, h: 120 };
+                p.push({ key: '_areaX', label: 'Area X', desc: 'Linke Kante der Zone', value: trap.triggerArea.x, step: 10 });
+                p.push({ key: '_areaY', label: 'Area Y', desc: 'Obere Kante der Zone', value: trap.triggerArea.y, step: 10 });
+                p.push({ key: '_areaW', label: 'Area W', desc: 'Breite der Zone', value: trap.triggerArea.w, step: 10 });
+                p.push({ key: '_areaH', label: 'Area H', desc: 'Höhe der Zone', value: trap.triggerArea.h, step: 10 });
+            }
+        }
+
+        // Speed
+        if (trap.speed !== undefined)
+            p.push({ key: 'speed', label: 'Speed', desc: 'Geschwindigkeit', value: trap.speed, step: 0.1 });
+
+        // Start Delay
+        if (trap.startDelay !== undefined)
+            p.push({ key: 'startDelay', label: 'Start Delay', desc: 'Frames bevor es losgeht', value: trap.startDelay, step: 10 });
+
+        // Shake Timer / Delay (FallingFloor)
+        if (t === 'fallingFloor' && trap.shakeTime !== undefined)
+            p.push({ key: 'shakeTime', label: 'Shake Time', desc: 'Frames Wackeln vor Fall', value: trap.shakeTime, step: 5 });
+
+        // DodgingPlatform
+        if (t === 'dodgingPlatform') {
+            if (trap.triggerRange !== undefined)
+                p.push({ key: 'triggerRange', label: 'Trigger Range', desc: 'Horizontale Reichweite zum Auslösen (Spieler muss in der Luft sein!)', value: trap.triggerRange, step: 5 });
+            if (trap.dodgeX !== undefined)
+                p.push({ key: 'dodgeX', label: 'Dodge To X', desc: 'X-Position wohin die Platform flieht', value: trap.dodgeX, step: 10 });
+            if (trap.waitTimer !== undefined)
+                p.push({ key: 'waitTimer', label: 'Wait Timer', desc: 'Frames warten vor Rückkehr', value: 50, step: 5 });
+        }
+
+        // ShootingSpike: direction + disguised
+        if (t === 'shootingSpike') {
+            const curDir = (trap.dir === 1 || trap.dir === 'right') ? 'right' : (trap.dir === 'up') ? 'up' : (trap.dir === 'down') ? 'down' : 'left';
+            p.push({ key: 'dir', label: 'Shoot Dir', desc: 'Schussrichtung', value: curDir, isDropdown: true, options: ['left', 'right', 'up', 'down'] });
+            p.push({ key: 'disguised', label: 'Disguised', desc: 'Sieht aus wie normaler Spike', value: trap.disguised ? 'yes' : 'no', isDropdown: true, options: ['no', 'yes'] });
+        }
+
+        // TimedFloor: delay
+        if (t === 'timedFloor' && trap.delay !== undefined)
+            p.push({ key: 'delay', label: 'Delay', desc: 'Frames bis Fall', value: trap.delay, step: 10 });
+
+        // WindZone: wind force
+        if (t === 'windZone') {
+            if (trap.vx !== undefined)
+                p.push({ key: 'vx', label: 'Wind X', desc: 'Horizontale Windkraft', value: trap.vx, step: 0.1 });
+            if (trap.vy !== undefined)
+                p.push({ key: 'vy', label: 'Wind Y', desc: 'Vertikale Windkraft', value: trap.vy, step: 0.1 });
+        }
+
+        // MovingPlatform
+        if (t === 'movingPlatform') {
+            if (trap.targetX !== undefined)
+                p.push({ key: 'targetX', label: 'Target X', desc: 'Ziel-X Position', value: trap.targetX, step: 10 });
+            if (trap.targetY !== undefined)
+                p.push({ key: 'targetY', label: 'Target Y', desc: 'Ziel-Y Position', value: trap.targetY, step: 10 });
+        }
+
+        // Switch: group
+        if (t === 'switch' && trap.group !== undefined)
+            p.push({ key: 'group', label: 'Group', desc: 'Schalter-Gruppe (A, B, ...)', value: trap.group, step: 1 });
+
+        // TogglePlatform: group
+        if (t === 'togglePlatform' && trap.group !== undefined)
+            p.push({ key: 'group', label: 'Group', desc: 'Schalter-Gruppe (A, B, ...)', value: trap.group, step: 1 });
+
+        // IceZone: keine extra params (nur Position/Größe)
+
+        // RisingDeath / ChasingWall: speed + delay already handled above
+
+        return p;
+    }
+
+    // ── TRAP FACTORY (echte Klassen-Instanzen) ─────────────
+    function cloneTrap(t, offsetX, offsetY) {
+        const x = (t.x || 0) + (offsetX || 0);
+        const y = (t.y || 0) + (offsetY || 0);
+        switch(t.type) {
+            case 'fallingFloor':    return new FallingFloor(x, y, t.w, t.h);
+            case 'fakeFloor':       return new FakeFloor(x, y, t.w, t.h);
+            case 'fallingCeiling':  return new FallingCeiling(x, y, t.w, t.h, (t.triggerX || x) + (offsetX || 0));
+            case 'dodgingPlatform': return new DodgingPlatform(x, y, t.w, t.h, t.dodgeDist || 250, t.returnDelay || 70);
+            case 'trollShaker':     return new TrollShaker(x, y, t.w, t.h);
+            case 'timedFloor':      return new TimedFloor(x, y, t.w, t.h, t.delay || 120);
+            case 'togglePlatform':  return new TogglePlatform(x, y, t.w, t.h, t.group || 'A');
+            case 'movingPlatform':  return new MovingPlatform(x, y, t.w, t.h, x, (t.targetX || x) + (offsetX || 0), t.speed || 0.5);
+            case 'hiddenPlatform':  return new HiddenPlatform(x, y, t.w, t.h, {x: x-50, y: y-80, w: 200, h: 100});
+            case 'shootingSpike':
+            case 'shootingSpikeDisguised':
+                return new ShootingSpike(x, y, t.dir || -1, (t.triggerX || x) + (offsetX || 0), t.speed || 4, t.triggerMinY || null, t.triggerMaxY || null, t.disguised || false);
+            case 'fakeExit':        return new FakeExit(x, y);
+            case 'killZone':        return new KillZone(x, y, t.w, t.h);
+            case 'risingDeath':     return new RisingDeath(t.speed || 0.3, t.startDelay || 120, t.startY);
+            case 'chasingWall':     return new ChasingWall(t.speed || 0.5, t.startDelay || 90);
+            case 'iceZone':         return new IceZone(x, y, t.w, t.h);
+            case 'windZone':        return new WindZone(x, y, t.w, t.h, t.vx || 0, t.vy || 0);
+            case 'invertZone':      return new InvertZone(x, y);
+            case 'switch':          return new Switch(x, y, t.group || 'A');
+            case 'movingExit': {
+                const pts = t.positions ? t.positions.map(p => ({x: p.x + (offsetX||0), y: p.y + (offsetY||0)})) : [{x, y}];
+                return new MovingExit(pts);
+            }
+            case 'fakeSpikes': {
+                const spks = t.spikes ? t.spikes.map(s => ({x: s.x+(offsetX||0), y: s.y+(offsetY||0), w: s.w, h: s.h, dir: s.dir})) : [{x,y,w:25,h:15,dir:'up'}];
+                return new FakeSpikes(spks);
+            }
+            default:
+                // Fallback: einfaches Objekt
+                const copy = JSON.parse(JSON.stringify(t));
+                copy.x = x; copy.y = y;
+                if (!copy.update) copy.update = function(){};
+                if (!copy.draw) copy.draw = function(){ ctx.fillStyle='#f1c40f'; ctx.globalAlpha=0.5; ctx.fillRect(this.x,this.y,this.w||30,this.h||20); ctx.globalAlpha=1; };
+                if (!copy.reset) copy.reset = function(){};
+                return copy;
+        }
+    }
+
+    // ── COPY / PASTE ──────────────────────────────────────
+    function copySelected() {
+        if (!selected || selected.type === 'player') return;
+        clipboard = { type: selected.type, ref: selected.ref };
+    }
+
+    function pasteElement() {
+        if (!clipboard) return;
+        pushUndo();
+        const lvl = LEVELS[currentLevel];
+
+        if (clipboard.type === 'platform') {
+            const r = clipboard.ref;
+            const copy = { x: r.x + 20, y: r.y + 20, w: r.w, h: r.h };
+            lvl.platforms.push(copy);
+            selected = { type: 'platform', index: lvl.platforms.length-1, ref: copy };
+        } else if (clipboard.type === 'spike') {
+            const r = clipboard.ref;
+            const copy = { x: r.x + 20, y: r.y + 20, w: r.w, h: r.h, dir: r.dir };
+            lvl.spikes.push(copy);
+            selected = { type: 'spike', index: lvl.spikes.length-1, ref: copy };
+        } else if (clipboard.type === 'exit') {
+            addExit(clipboard.ref.x + 20, clipboard.ref.y + 20);
+            return;
+        } else if (clipboard.type === 'trap') {
+            const copy = cloneTrap(clipboard.ref, 20, 20);
+            lvl.traps.push(copy);
+            selected = { type: 'trap', index: lvl.traps.length-1, ref: copy };
+        }
+
+        updateProps();
+        updateElementList();
+        render();
+    }
+
+    // ── TRAP PROPERTY SETTER (konvertiert Werte richtig) ────
+    function setTrapProp(key, value) {
+        if (!selected) return;
+        if (key === 'dir') {
+            // Schussrichtung als String speichern
+            selected.ref.dir = value;
+        } else if (key === 'disguised') {
+            selected.ref.disguised = (value === 'yes');
+        } else if (key === 'triggerMode') {
+            selected.ref.triggerMode = value;
+            // Default-Werte für neuen Modus setzen
+            if (value === 'area' && !selected.ref.triggerArea) {
+                selected.ref.triggerArea = { x: selected.ref.x - 50, y: selected.ref.y - 50, w: 120, h: 120 };
+            }
+        } else {
+            selected.ref[key] = value;
+        }
+    }
+
+    // ── WAYPOINT EDITING ───────────────────────────────────
+    function updateWaypoint(index, prop, value) {
+        if (!selected || !selected.ref.positions) return;
+        pushUndo();
+        selected.ref.positions[index][prop] = value;
+        // Erstes Waypoint = Trap-Position
+        if (index === 0) {
+            selected.ref.x = selected.ref.positions[0].x;
+            selected.ref.y = selected.ref.positions[0].y;
+        }
+        render();
+    }
+
+    function addWaypoint() {
+        if (!selected || !selected.ref.positions) return;
+        pushUndo();
+        const pts = selected.ref.positions;
+        const last = pts[pts.length - 1];
+        pts.push({ x: last.x + 80, y: last.y });
+        updateProps();
+        render();
+    }
+
+    function removeWaypoint(index) {
+        if (!selected || !selected.ref.positions || selected.ref.positions.length <= 1) return;
+        pushUndo();
+        selected.ref.positions.splice(index, 1);
+        // Update Trap-Position auf erstes Waypoint
+        selected.ref.x = selected.ref.positions[0].x;
+        selected.ref.y = selected.ref.positions[0].y;
+        updateProps();
+        render();
+    }
+
+    function saveElemNote(text) {
+        const nk = noteKey(selected);
+        if (!nk) return;
+        if (text.trim()) {
+            elementNotes[nk] = text.trim();
+        } else {
+            delete elementNotes[nk];
+        }
+        localStorage.setItem('editor_notes', JSON.stringify(elementNotes));
+        render();
+    }
+
+    // ── LEVEL VARIANTS ───────────────────────────────────────
+    function saveVariant(existingName) {
+        const name = existingName || prompt('Variant name (e.g. "v2 breitere Plattformen"):');
+        if (!name) return;
+        if (!variants[currentLevel]) variants[currentLevel] = {};
+        variants[currentLevel][name] = cloneLevelState(LEVELS[currentLevel]);
+        localStorage.setItem('editor_variants', JSON.stringify(variants));
+        updateVariantList();
+        showToast('Variant "' + name + '" saved!');
+    }
+
+    function loadVariant(name) {
+        if (!variants[currentLevel] || !variants[currentLevel][name]) return;
+        pushUndo();
+        restoreLevelState(LEVELS[currentLevel], variants[currentLevel][name]);
+        selected = null;
+        updateProps(); updateElementList(); render();
+        showToast('Variant "' + name + '" loaded!');
+    }
+
+    function deleteVariant(name) {
+        if (!variants[currentLevel]) return;
+        delete variants[currentLevel][name];
+        localStorage.setItem('editor_variants', JSON.stringify(variants));
+        updateVariantList();
+    }
+
+    function updateVariantList() {
+        const el = document.getElementById('variantList');
+        if (!el) return;
+        const lvlVariants = variants[currentLevel] || {};
+        const names = Object.keys(lvlVariants);
+        if (names.length === 0) {
+            el.innerHTML = '<div style="color:#555;font-size:11px;">No saved variants</div>';
+            return;
+        }
+        el.innerHTML = names.map(n =>
+            `<div class="anno-item" style="border-left-color:#3498db;">
+                <span style="cursor:pointer;flex:1;" onclick="loadVariant('${n}')">${n}</span>
+                <span style="color:#2ecc71;cursor:pointer;margin-right:8px;font-size:11px;" onclick="saveVariant('${n}')" title="Overwrite">&#x1F4BE;</span>
+                <span class="del" onclick="deleteVariant('${n}')">X</span>
+            </div>`
+        ).join('');
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  TEST ENGINE — Mini-Gameloop direkt im Editor
+    // ═══════════════════════════════════════════════════════════
+    let testRunning = false;
+    let testPlayer = null;
+    let testCtx = null;
+    let testState = 'playing'; // 'playing' | 'dead'
+    let testRespawn = 0;
+    let testDeaths = 0;
+    let testAnimId = null;
+    let preTestState = null; // Level-Stand vor dem Test
+    const TARGET_FPS = 144;
+    const FIXED_DT = 1000 / TARGET_FPS;
+    let testLastTime = 0;
+    let testAccum = 0;
+
+    function testLevel() {
+        const lvl = LEVELS[currentLevel];
+
+        // Level-Stand VOR dem Test sichern (alle Trap-Positionen + States)
+        preTestState = lvl.traps.map(t => {
+            const s = {};
+            for (const k in t) {
+                if (typeof t[k] !== 'function') s[k] = t[k];
+            }
+            return s;
+        });
+
+        game.levelData = lvl;
+        game.cameraX = 0;
+        game.cameraY = 0;
+
+        // gameCanvas (der echte ctx) für Test nutzen
+        edCanvas.width = 800;
+        edCanvas.height = 500;
+
+        // Responsive Sizing — Canvas zentriert im Overlay
+        const maxW = window.innerWidth * 0.9;
+        const maxH = window.innerHeight * 0.9;
+        const ratio = 800 / 500;
+        let w, h;
+        if (maxW / maxH > ratio) { h = maxH; w = h * ratio; }
+        else { w = maxW; h = w / ratio; }
+        edCanvas.style.width = w + 'px';
+        edCanvas.style.height = h + 'px';
+        edCanvas.style.position = 'fixed';
+        edCanvas.style.top = '50%';
+        edCanvas.style.left = '50%';
+        edCanvas.style.transform = 'translate(-50%, -50%)';
+        edCanvas.style.zIndex = '9999';
+        edCanvas.style.borderRadius = '4px';
+
+        // Player erstellen
+        testPlayer = new Player(lvl.player.x, lvl.player.y);
+        testPlayer.gDir = lvl.gravityDir || 1;
+        game.player = testPlayer;
+        testState = 'playing';
+        testDeaths = 0;
+        testRespawn = 0;
+        testLastTime = 0;
+        testAccum = 0;
+
+        // Traps resetten
+        lvl.traps.forEach(t => t.reset());
+
+        // Camera init
+        const lvlW = lvl.width || 800;
+        const lvlH = lvl.height || 500;
+        const camMin = lvl.cameraMinX || 0;
+        game.cameraX = Math.max(camMin, Math.min(testPlayer.x - 400, lvlW - 800));
+        if (lvl.verticalScroll) {
+            game.cameraY = Math.max(0, Math.min(testPlayer.y - 250, lvlH - 500));
+        } else {
+            game.cameraY = 0;
+        }
+
+        // Canvas ins Overlay verschieben und Overlay zeigen
+        document.getElementById('testOverlay').appendChild(edCanvas);
+        document.getElementById('testOverlay').style.display = 'block';
+        document.getElementById('testInfo').textContent = `TEST — Level ${currentLevel+1} "${lvl.name}" | Deaths: 0 | ESC = Back`;
+        testRunning = true;
+
+        // game.onPlayerDeath braucht die test engine
+        game.onPlayerDeath = function() {
+            testDeaths++;
+            testState = 'dead';
+            testRespawn = CFG.respawnDelay;
+        };
+
+        requestAnimationFrame(testGameLoop);
+    }
+
+    function stopTest() {
+        testRunning = false;
+        document.getElementById('testOverlay').style.display = 'none';
+        if (testAnimId) cancelAnimationFrame(testAnimId);
+        game.onPlayerDeath = null;
+
+        // Trap-Stand aus VOR dem Test wiederherstellen (nicht reset!)
+        if (preTestState) {
+            const traps = LEVELS[currentLevel].traps;
+            preTestState.forEach((saved, i) => {
+                if (traps[i]) {
+                    for (const k in saved) {
+                        traps[i][k] = saved[k];
+                    }
+                }
+            });
+            preTestState = null;
+        }
+
+        // Canvas zurück in den Editor-Bereich
+        document.getElementById('canvasWrap').appendChild(edCanvas);
+        edCanvas.style.position = '';
+        edCanvas.style.top = '';
+        edCanvas.style.left = '';
+        edCanvas.style.transform = '';
+        edCanvas.style.zIndex = '';
+        edCanvas.style.borderRadius = '';
+        edCanvas.style.width = '';
+        edCanvas.style.height = '';
+        render();
+    }
+
+    function testGameLoop(time) {
+        if (!testRunning) return;
+        testAnimId = requestAnimationFrame(testGameLoop);
+
+        if (!testLastTime) testLastTime = time;
+        const elapsed = Math.min(time - testLastTime, 100);
+        testLastTime = time;
+        testAccum += elapsed;
+
+        while (testAccum >= FIXED_DT) {
+            testUpdate();
+            testAccum -= FIXED_DT;
+        }
+        testDraw();
+    }
+
+    function testUpdate() {
+        const lvl = LEVELS[currentLevel];
+        game.levelData = lvl;
+
+        // ESC = zurück zum Editor
+        if (keys['Escape']) { keys['Escape'] = false; stopTest(); return; }
+        // R = Restart
+        if (keys['KeyR'] && testState === 'playing') { testPlayer.die(); return; }
+
+        if (testState === 'dead') {
+            testRespawn--;
+            if (testRespawn <= 0) {
+                testPlayer.reset();
+                lvl.traps.forEach(t => t.reset());
+                testState = 'playing';
+                // Camera reset
+                if (lvl.verticalScroll) {
+                    const lvlH = lvl.height || 500;
+                    game.cameraY = Math.max(0, Math.min(testPlayer.startY - 250, lvlH - 500));
+                }
+                if (lvl.autoScroll) {
+                    game.cameraX = Math.max(0, testPlayer.startX - 400);
+                }
+            }
+            return;
+        }
+
+        // Player update
+        const plats = [...lvl.platforms];
+        const platformTypes = ['fallingFloor','disappearing','hiddenPlatform','trollShaker','triggerFloor','dodgingPlatform','timedFloor','togglePlatform','movingPlatform'];
+        lvl.traps.forEach(t => { if (t.solid && platformTypes.includes(t.type)) plats.push(t); });
+
+        testPlayer.update(plats);
+        lvl.traps.forEach(t => t.update(testPlayer));
+
+        // Camera
+        const lvlW = lvl.width || 800;
+        if (lvl.autoScroll) {
+            game.cameraX += lvl.autoScroll.speed;
+            if (game.cameraX > lvlW - 800) game.cameraX = lvlW - 800;
+        } else if (lvlW > 800) {
+            const camMin = lvl.cameraMinX || 0;
+            const effMin = Math.min(camMin, testPlayer.x - 20);
+            const target = Math.max(effMin, Math.min(testPlayer.x - 400, lvlW - 800));
+            game.cameraX = lerp(game.cameraX, target, 0.08);
+        } else {
+            game.cameraX = 0;
+        }
+        if (lvl.verticalScroll) {
+            const lvlH = lvl.height || 500;
+            const targetY = Math.max(0, Math.min(testPlayer.y - 250, lvlH - 500));
+            game.cameraY = lerp(game.cameraY, targetY, 0.08);
+        }
+
+        // Spike collision
+        for (const s of lvl.spikes) {
+            if (testPlayer.alive) {
+                const sHit = { x: s.x+3, y: s.y+3, w: s.w-6, h: s.h-6 };
+                if (aabb(testPlayer, sHit)) testPlayer.die();
+            }
+        }
+
+        // Exit check (statisches Exit + MovingExit)
+        if (testPlayer.alive) {
+            const exits = [];
+            // Statisches Exit
+            if (lvl.exit) {
+                let show = true;
+                if (lvl.exit.showAboveY && testPlayer.y >= lvl.exit.showAboveY) show = false;
+                if (lvl.exit.showBelowX && testPlayer.x >= lvl.exit.showBelowX) show = false;
+                if (show) exits.push(lvl.exit);
+            }
+            // MovingExit (nur wenn er steht, nicht während Bewegung)
+            const movExit = lvl.traps.find(t => t.type === 'movingExit');
+            if (movExit && !movExit.moving && movExit.getBounds) {
+                exits.push(movExit.getBounds());
+            }
+            for (const eb of exits) {
+                if (aabb(testPlayer, eb)) {
+                    document.getElementById('testInfo').textContent = `LEVEL COMPLETE! Deaths: ${testDeaths} | R = Restart | ESC = Editor`;
+                    testPlayer.reset();
+                    lvl.traps.forEach(t => { if (t.reset) t.reset(); });
+                    testState = 'playing';
+                    break;
+                }
+            }
+        }
+
+        document.getElementById('testInfo').textContent = `TEST — Level ${currentLevel+1} "${lvl.name}" | Deaths: ${testDeaths} | R = Restart | ESC = Back`;
+    }
+
+    function testDraw() {
+        const lvl = LEVELS[currentLevel];
+
+        ctx.save();
+        applyShake();
+
+        // Background
+        ctx.fillStyle = '#2a2a4a';
+        ctx.fillRect(0, 0, 800, 500);
+
+        // World space
+        ctx.save();
+        ctx.translate(-game.cameraX, -game.cameraY);
+
+        lvl.platforms.forEach(p => drawPlatform(p));
+        lvl.traps.forEach(t => { if (t.type !== 'darknessOverlay') t.draw(); });
+
+        lvl.spikes.forEach(s => drawSpike(s));
+        if (lvl.exit) drawExit(lvl.exit);
+        testPlayer.draw();
+        updateParticles();
+        lvl.traps.forEach(t => { if (t.type === 'darknessOverlay') t.draw(); });
+
+        ctx.restore();
+        ctx.restore();
+    }
+
+    function exportAnnotations() {
+        const annos = annotations[currentLevel] || [];
+        const notes = document.getElementById('exportNotes').value;
+        let text = `=== Level ${currentLevel+1} "${LEVELS[currentLevel].name}" ===\n\n`;
+        if (notes) text += `Notes:\n${notes}\n\n`;
+        if (annos.length) {
+            text += `Annotations:\n`;
+            annos.forEach(a => {
+                text += `- "${a.text}" at (${a.x}, ${a.y}) size ${a.w}x${a.h}\n`;
+            });
+        }
+        navigator.clipboard.writeText(text).then(() => alert('Annotations copied!'));
+    }
+
+    // ── START ─────────────────────────────────────────────────
+    init();
+    </script>
+</body>
+</html>

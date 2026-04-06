@@ -4,12 +4,18 @@
 // ============================================================
 
 const LEVELS = [];
+const PHASE_SIZE = 15;
 
-// ── GAME OBJECT ─────────────────────────────────────────────
+function getPhaseCount() { return Math.ceil(LEVELS.length / PHASE_SIZE); }
+function getPhaseStart(phase) { return phase * PHASE_SIZE; }
+function getPhaseEnd(phase) { return Math.min((phase + 1) * PHASE_SIZE, LEVELS.length); }
+
+// ── GAME OBJECT ────────────────────��────────────────────���───
 const game = {
     state: 'menu',
     currentLevel: 0,
     cameraX: 0,
+    cameraY: 0,
     deaths: 0,
     totalDeaths: 0,
     player: null,
@@ -22,13 +28,16 @@ const game = {
     // Level Select
     highestUnlocked: 0,
     selectedLevel: 0,
+    selectedPhase: 0,
     navCooldown: 0,
     // Speedrun
     speedrunMode: false,
+    speedrunOption: 0,   // 0=OFF, 1=Phase1, 2=Phase2, ..., last=Hardcore
+    speedrunPhase: -1,   // -1=Hardcore, 0+=Phase-Index
     speedrunStartTime: 0,
     speedrunPenalty: 0,
     speedrunFinalTime: 0,
-    speedrunBestTime: Infinity,
+    speedrunBestTimes: {},
 
     init() {
         this.state = 'menu';
@@ -37,14 +46,34 @@ const game = {
         this.currentLevel = 0;
         // Fortschritt laden
         this.highestUnlocked = parseInt(localStorage.getItem('ohcomeon_progress') || '0');
-        // Speedrun-Bestzeit laden
-        const best = parseFloat(localStorage.getItem('ohcomeon_best') || 'Infinity');
-        this.speedrunBestTime = isNaN(best) ? Infinity : best;
+        // Speedrun-Bestzeiten laden (neues Format)
+        try {
+            const raw = localStorage.getItem('ohcomeon_bests');
+            if (raw) {
+                this.speedrunBestTimes = JSON.parse(raw);
+            }
+        } catch (e) {}
+        // Migration: altes Format → neues
+        const oldBest = parseFloat(localStorage.getItem('ohcomeon_best') || 'NaN');
+        if (!isNaN(oldBest) && (!this.speedrunBestTimes.hardcore || oldBest < this.speedrunBestTimes.hardcore)) {
+            this.speedrunBestTimes.hardcore = oldBest;
+            localStorage.setItem('ohcomeon_bests', JSON.stringify(this.speedrunBestTimes));
+            localStorage.removeItem('ohcomeon_best');
+        }
     },
 
-    startSpeedrun() {
+    getSpeedrunKey() {
+        return this.speedrunPhase === -1 ? 'hardcore' : 'phase_' + this.speedrunPhase;
+    },
+
+    getSpeedrunBest() {
+        return this.speedrunBestTimes[this.getSpeedrunKey()] || Infinity;
+    },
+
+    startSpeedrun(phase) {
         this.speedrunMode = true;
-        this.speedrunStartTime = 0;    // Startet erst bei erster Tasten-Berührung
+        this.speedrunPhase = phase;
+        this.speedrunStartTime = 0;
         this.speedrunPending = true;
         this.speedrunPenalty = 0;
         this.speedrunFinalTime = 0;
@@ -55,6 +84,12 @@ const game = {
     getSpeedrunElapsed() {
         if (!this.speedrunStartTime) return 0;
         return (Date.now() - this.speedrunStartTime + this.speedrunPenalty) / 1000;
+    },
+
+    // Bestimmt das letzte Level für den aktuellen Speedrun
+    getSpeedrunEndLevel() {
+        if (this.speedrunPhase === -1) return LEVELS.length - 1;
+        return getPhaseEnd(this.speedrunPhase) - 1;
     },
 
     saveProgress() {
@@ -76,12 +111,19 @@ const game = {
         // Camera direkt auf Spieler setzen (cameraMinX = versteckt Bereich links)
         const lvlW = lvl.width || W;
         let zoom = 1;
-        if (lvl.width && lvl.height) {
+        if (lvl.width && lvl.height && !lvl.verticalScroll && !lvl.autoScroll) {
             zoom = Math.min(W / lvl.width, H / lvl.height);
         }
         const visibleW = W / zoom;
         const camMin = lvl.cameraMinX || 0;
         this.cameraX = Math.max(camMin, Math.min(this.player.x - visibleW / 2, lvlW - visibleW));
+        // Vertikale Kamera
+        if (lvl.verticalScroll) {
+            const lvlH = lvl.height || H;
+            this.cameraY = Math.max(0, Math.min(this.player.y - H / 2, lvlH - H));
+        } else {
+            this.cameraY = 0;
+        }
         lvl.traps.forEach(t => t.reset());
     },
 
@@ -89,6 +131,20 @@ const game = {
         this.player.reset();
         this.levelData.traps.forEach(t => t.reset());
         this.state = 'playing';
+        // Kamera zurücksetzen bei Vertical Scroll / AutoScroll
+        const lvl = this.levelData;
+        if (lvl.verticalScroll) {
+            const lvlH = lvl.height || H;
+            this.cameraY = Math.max(0, Math.min(this.player.startY - H / 2, lvlH - H));
+        }
+        if (lvl.autoScroll) {
+            const lvlW = lvl.width || W;
+            let zoom = 1;
+            if (lvl.width && lvl.height) zoom = Math.min(W / lvl.width, H / lvl.height);
+            const visibleW = W / zoom;
+            const camMin = lvl.cameraMinX || 0;
+            this.cameraX = Math.max(camMin, Math.min(this.player.startX - visibleW / 2, lvlW - visibleW));
+        }
     },
 
     onPlayerDeath() {
@@ -135,11 +191,12 @@ const game = {
             keys['KeyL'] = false;
             this.state = 'levelSelect';
             this.selectedLevel = this.currentLevel || 0;
+            this.selectedPhase = Math.floor(this.selectedLevel / PHASE_SIZE);
             return;
         }
 
-        // ESC = zurück zum Menü (ausser im Menü selber)
-        if (keys['Escape'] && this.state !== 'menu' && this.state !== 'levelSelect') {
+        // ESC = zurück zum Menü (ausser im Menü, LevelSelect, Settings)
+        if (keys['Escape'] && this.state !== 'menu' && this.state !== 'levelSelect' && this.state !== 'settings') {
             keys['Escape'] = false;
             this.state = 'menu';
             // Speedrun-Zustand zurücksetzen (neuer Run beginnt frisch)
@@ -153,22 +210,49 @@ const game = {
         // N = Neuer Speedrun (direkt, ohne zurück ins Menü)
         if (keys['KeyN'] && this.speedrunMode && this.state !== 'menu') {
             keys['KeyN'] = false;
-            this.startSpeedrun();
-            this.startLevel(0);
+            const startLvl = this.speedrunPhase >= 0 ? getPhaseStart(this.speedrunPhase) : 0;
+            this.startSpeedrun(this.speedrunPhase);
+            this.startLevel(startLvl);
+            return;
+        }
+
+        // ── SETTINGS ─────────────────────────────────────────
+        if (this.state === 'settings') {
+            updateSettings();
             return;
         }
 
         // ── MENU ────────────────────────────────────────────
         if (this.state === 'menu') {
-            // S = Speedrun Toggle
+            // O = Options / Settings
+            if (keys['KeyO']) {
+                keys['KeyO'] = false;
+                this.state = 'settings';
+                SFX.menuSelect();
+                return;
+            }
+            // S = Speedrun Cycle: OFF → Phase 1 → Phase 2 → ... → Hardcore → OFF
             if (keys['KeyS']) {
                 keys['KeyS'] = false;
-                this.speedrunMode = !this.speedrunMode;
+                const phases = getPhaseCount();
+                this.speedrunOption = (this.speedrunOption + 1) % (phases + 2);
+                this.speedrunMode = this.speedrunOption > 0;
             }
-            if (isJump() || keys['Enter']) {
+            if (isJump() || keys['Enter'] || keys['Space']) {
+                keys['Enter'] = false; keys['Space'] = false;
                 SFX.menuSelect();
-                if (this.speedrunMode) this.startSpeedrun();
-                this.startLevel(0);
+                if (this.speedrunMode) {
+                    const phases = getPhaseCount();
+                    if (this.speedrunOption <= phases) {
+                        this.startSpeedrun(this.speedrunOption - 1);
+                        this.startLevel(getPhaseStart(this.speedrunOption - 1));
+                    } else {
+                        this.startSpeedrun(-1);
+                        this.startLevel(0);
+                    }
+                } else {
+                    this.startLevel(0);
+                }
             }
             return;
         }
@@ -176,14 +260,38 @@ const game = {
         // ── LEVEL SELECT (single-press Navigation) ─────────
         if (this.state === 'levelSelect') {
             const cols = 5;
-            const maxSel = Math.min(this.highestUnlocked, LEVELS.length - 1);
+            const phaseOffset = this.selectedPhase * PHASE_SIZE;
+            const phaseEnd = Math.min(phaseOffset + PHASE_SIZE, LEVELS.length);
+            const maxSel = Math.min(this.highestUnlocked, phaseEnd - 1);
+            const minSel = phaseOffset;
+
+            // Phase-Tabs: Q/E
+            if (keys['KeyQ']) {
+                keys['KeyQ'] = false;
+                if (this.selectedPhase > 0) {
+                    this.selectedPhase--;
+                    const newOffset = this.selectedPhase * PHASE_SIZE;
+                    this.selectedLevel = Math.min(this.highestUnlocked, Math.min(newOffset + PHASE_SIZE, LEVELS.length) - 1);
+                    this.selectedLevel = Math.max(newOffset, this.selectedLevel);
+                }
+            }
+            if (keys['KeyE']) {
+                keys['KeyE'] = false;
+                if (this.selectedPhase < getPhaseCount() - 1) {
+                    this.selectedPhase++;
+                    const newOffset = this.selectedPhase * PHASE_SIZE;
+                    this.selectedLevel = Math.min(this.highestUnlocked, Math.min(newOffset + PHASE_SIZE, LEVELS.length) - 1);
+                    this.selectedLevel = Math.max(newOffset, this.selectedLevel);
+                }
+            }
+
             if (keys['ArrowRight'] || keys['KeyD']) {
                 keys['ArrowRight'] = false; keys['KeyD'] = false;
                 this.selectedLevel = Math.min(maxSel, this.selectedLevel + 1);
             }
             if (keys['ArrowLeft'] || keys['KeyA']) {
                 keys['ArrowLeft'] = false; keys['KeyA'] = false;
-                this.selectedLevel = Math.max(0, this.selectedLevel - 1);
+                this.selectedLevel = Math.max(minSel, this.selectedLevel - 1);
             }
             if (keys['ArrowDown'] || keys['KeyS']) {
                 keys['ArrowDown'] = false; keys['KeyS'] = false;
@@ -191,9 +299,9 @@ const game = {
             }
             if (keys['ArrowUp'] || keys['KeyW']) {
                 keys['ArrowUp'] = false; keys['KeyW'] = false;
-                this.selectedLevel = Math.max(0, this.selectedLevel - cols);
+                this.selectedLevel = Math.max(minSel, this.selectedLevel - cols);
             }
-            if ((keys['Enter'] || keys['Space']) && this.selectedLevel <= this.highestUnlocked) {
+            if ((keys['Enter'] || keys['Space']) && this.selectedLevel <= this.highestUnlocked && this.selectedLevel < LEVELS.length) {
                 keys['Enter'] = false;
                 keys['Space'] = false;
                 this.startLevel(this.selectedLevel);
@@ -217,19 +325,23 @@ const game = {
             this.levelCompleteTimer--;
             if (this.levelCompleteTimer <= 0) {
                 this.saveProgress();
-                if (this.currentLevel + 1 < LEVELS.length) {
-                    this.startLevel(this.currentLevel + 1);
-                } else {
+                const isLastLevel = this.currentLevel + 1 >= LEVELS.length;
+                const isSpeedrunEnd = this.speedrunMode && this.currentLevel >= this.getSpeedrunEndLevel();
+                if (isLastLevel || isSpeedrunEnd) {
                     this.state = 'win';
                     this.winTimer = 0;
                     // Speedrun: Finale Zeit berechnen + Best-Time speichern
                     if (this.speedrunMode && this.speedrunStartTime) {
                         this.speedrunFinalTime = this.getSpeedrunElapsed();
-                        if (this.speedrunFinalTime < this.speedrunBestTime) {
-                            this.speedrunBestTime = this.speedrunFinalTime;
-                            localStorage.setItem('ohcomeon_best', this.speedrunBestTime);
+                        const key = this.getSpeedrunKey();
+                        const prevBest = this.speedrunBestTimes[key] || Infinity;
+                        if (this.speedrunFinalTime < prevBest) {
+                            this.speedrunBestTimes[key] = this.speedrunFinalTime;
+                            localStorage.setItem('ohcomeon_bests', JSON.stringify(this.speedrunBestTimes));
                         }
                     }
+                } else {
+                    this.startLevel(this.currentLevel + 1);
                 }
             }
             return;
@@ -260,17 +372,29 @@ const game = {
         // Camera folgt Spieler (smooth, mit cameraMinX + zoom Support)
         const lvlW = this.levelData.width || W;
         let zoom = 1;
-        if (this.levelData.width && this.levelData.height) {
+        if (this.levelData.width && this.levelData.height && !this.levelData.verticalScroll && !this.levelData.autoScroll) {
             zoom = Math.min(W / this.levelData.width, H / this.levelData.height);
         }
         const visibleW = W / zoom;
-        if (lvlW > visibleW) {
+
+        // AutoScroll: Kamera bewegt sich automatisch
+        if (this.levelData.autoScroll) {
+            this.cameraX += this.levelData.autoScroll.speed;
+            if (this.cameraX > lvlW - visibleW) this.cameraX = lvlW - visibleW;
+        } else if (lvlW > visibleW) {
             const camMin = this.levelData.cameraMinX || 0;
             const effectiveMin = Math.min(camMin, this.player.x - 20);
             const target = Math.max(effectiveMin, Math.min(this.player.x - visibleW / 2, lvlW - visibleW));
             this.cameraX = lerp(this.cameraX, target, 0.08);
         } else {
             this.cameraX = 0;
+        }
+
+        // Vertikale Kamera
+        if (this.levelData.verticalScroll) {
+            const lvlH = this.levelData.height || H;
+            const targetY = Math.max(0, Math.min(this.player.y - H / 2, lvlH - H));
+            this.cameraY = lerp(this.cameraY, targetY, 0.08);
         }
 
         // Spike collision
@@ -320,6 +444,12 @@ const game = {
             return;
         }
 
+        if (this.state === 'settings') {
+            drawSettings(this.frameCount);
+            ctx.restore();
+            return;
+        }
+
         if (this.state === 'levelSelect') {
             drawLevelSelect(this.selectedLevel, this.highestUnlocked, this.frameCount);
             ctx.restore();
@@ -336,9 +466,9 @@ const game = {
 
         // === WORLD SPACE (mit Camera + Zoom) ===
         ctx.save();
-        // Auto-Zoom: wenn BEIDE Dimensionen gesetzt, wird das Level exakt eingepasst
+        // Auto-Zoom: nur wenn BEIDE Dimensionen gesetzt UND kein Scroll-Level
         let zoom = 1;
-        if (lvl.width && lvl.height) {
+        if (lvl.width && lvl.height && !lvl.verticalScroll && !lvl.autoScroll) {
             zoom = Math.min(W / lvl.width, H / lvl.height);
         }
         if (zoom !== 1) {
@@ -347,7 +477,7 @@ const game = {
             ctx.translate(offsetX, offsetY);
             ctx.scale(zoom, zoom);
         }
-        ctx.translate(-this.cameraX, 0);
+        ctx.translate(-this.cameraX, -this.cameraY);
 
         lvl.platforms.forEach(p => drawPlatform(p));
         // Alle Traps AUSSER Darkness (wird zuletzt gezeichnet)
@@ -390,9 +520,27 @@ const game = {
     },
 };
 
-// ── GAME LOOP ───────────────────────────────────────────────
-function gameLoop() {
-    game.update();
+// ── GAME LOOP (Fixed Timestep @ 144Hz) ─────────────────────
+// Physik läuft IMMER mit 144 Steps/Sekunde, egal welche Monitor-Hz.
+// 60Hz  → ~2.4 Updates pro Frame (holt auf)
+// 144Hz → ~1 Update pro Frame (wie bisher)
+// 240Hz → ~0.6 Updates pro Frame (manche Frames ohne Update)
+const TARGET_FPS = 144;
+const FIXED_DT = 1000 / TARGET_FPS;  // ~6.944ms
+let lastTime = 0;
+let accumulator = 0;
+
+function gameLoop(currentTime) {
+    if (!lastTime) lastTime = currentTime;
+    const elapsed = Math.min(currentTime - lastTime, 100); // Cap: verhindert Spiral bei Tab-Wechsel
+    lastTime = currentTime;
+    accumulator += elapsed;
+
+    while (accumulator >= FIXED_DT) {
+        game.update();
+        accumulator -= FIXED_DT;
+    }
+
     game.draw();
     requestAnimationFrame(gameLoop);
 }
@@ -419,4 +567,72 @@ resizeCanvas();
 
 // ── START ───────────────────────────────────────────────────
 game.init();
-gameLoop();
+
+// Editor Test-Modus: ?level=16 in URL → direkt zu Level 16 springen
+const urlParams = new URLSearchParams(window.location.search);
+const testLevel = urlParams.get('level');
+if (testLevel !== null) {
+    const idx = parseInt(testLevel) - 1;
+    if (idx >= 0 && idx < LEVELS.length) {
+        // Editor-Daten laden (Positionen aus dem Editor übernehmen)
+        try {
+            const raw = localStorage.getItem('editor_test_level');
+            if (raw) {
+                const data = JSON.parse(raw);
+                if (data.index === idx) {
+                    const lvl = LEVELS[idx];
+                    // Player & Exit
+                    lvl.player.x = data.player.x;
+                    lvl.player.y = data.player.y;
+                    if (data.exit && lvl.exit) {
+                        lvl.exit.x = data.exit.x; lvl.exit.y = data.exit.y;
+                        lvl.exit.w = data.exit.w; lvl.exit.h = data.exit.h;
+                    }
+                    // Platforms
+                    data.platforms.forEach((p, i) => {
+                        if (lvl.platforms[i]) {
+                            lvl.platforms[i].x = p.x; lvl.platforms[i].y = p.y;
+                            lvl.platforms[i].w = p.w; lvl.platforms[i].h = p.h;
+                        }
+                    });
+                    // Neue Platforms die im Editor hinzugefügt wurden
+                    for (let i = lvl.platforms.length; i < data.platforms.length; i++) {
+                        lvl.platforms.push(data.platforms[i]);
+                    }
+                    // Überschüssige entfernen
+                    while (lvl.platforms.length > data.platforms.length) lvl.platforms.pop();
+                    // Spikes
+                    data.spikes.forEach((s, i) => {
+                        if (lvl.spikes[i]) {
+                            lvl.spikes[i].x = s.x; lvl.spikes[i].y = s.y;
+                            lvl.spikes[i].w = s.w; lvl.spikes[i].h = s.h;
+                            lvl.spikes[i].dir = s.dir;
+                        }
+                    });
+                    for (let i = lvl.spikes.length; i < data.spikes.length; i++) {
+                        lvl.spikes.push(data.spikes[i]);
+                    }
+                    while (lvl.spikes.length > data.spikes.length) lvl.spikes.pop();
+                    // Trap-Positionen überschreiben
+                    data.trapPositions.forEach((tp, i) => {
+                        if (lvl.traps[i] && tp.x !== undefined) {
+                            lvl.traps[i].x = tp.x; lvl.traps[i].y = tp.y;
+                            if (tp.w) lvl.traps[i].w = tp.w;
+                            if (tp.h) lvl.traps[i].h = tp.h;
+                            if (lvl.traps[i].origX !== undefined) lvl.traps[i].origX = tp.x;
+                            if (lvl.traps[i].origY !== undefined) lvl.traps[i].origY = tp.y;
+                            if (lvl.traps[i].startY !== undefined) lvl.traps[i].startY = tp.y;
+                        }
+                    });
+                }
+                // Test-Daten löschen (einmalig)
+                localStorage.removeItem('editor_test_level');
+            }
+        } catch(e) {}
+
+        game.highestUnlocked = LEVELS.length;
+        game.startLevel(idx);
+    }
+}
+
+requestAnimationFrame(gameLoop);

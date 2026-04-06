@@ -21,6 +21,47 @@ const CFG = {
     levelTitleTime: 120,
 };
 
+// ── SETTINGS ───────────────────────────────────────────────
+const SETTINGS = {
+    keys: { left: null, right: null, jump: null },
+    musicVol: 100,
+    sfxVol: 100,
+
+    load() {
+        try {
+            const raw = localStorage.getItem('ohcomeon_settings');
+            if (raw) {
+                const data = JSON.parse(raw);
+                if (data.keys) {
+                    this.keys.left = data.keys.left || null;
+                    this.keys.right = data.keys.right || null;
+                    this.keys.jump = data.keys.jump || null;
+                }
+                if (data.musicVol !== undefined) this.musicVol = data.musicVol;
+                if (data.sfxVol !== undefined) this.sfxVol = data.sfxVol;
+            }
+        } catch (e) {}
+    },
+
+    save() {
+        localStorage.setItem('ohcomeon_settings', JSON.stringify({
+            keys: this.keys,
+            musicVol: this.musicVol,
+            sfxVol: this.sfxVol,
+        }));
+    },
+};
+
+SETTINGS.load();
+// Volume-Settings an SFX übertragen
+SFX.musicVol = SETTINGS.musicVol;
+SFX.sfxVol = SETTINGS.sfxVol;
+
+// Prüft ob ein Key-Code als Custom-Binding verwendet wird
+function isCustomBound(code) {
+    return code === SETTINGS.keys.left || code === SETTINGS.keys.right || code === SETTINGS.keys.jump;
+}
+
 // ── INPUT ───────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -28,12 +69,23 @@ window.addEventListener('keydown', e => {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
     }
+    // Custom-gebundene Tasten auch blockieren
+    if (isCustomBound(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-function isLeft()  { return keys['ArrowLeft']  || keys['KeyA']; }
-function isRight() { return keys['ArrowRight'] || keys['KeyD']; }
-function isJump()  { return keys['ArrowUp']    || keys['KeyW'] || keys['Space']; }
+function isLeft() {
+    if (SETTINGS.keys.left) return !!keys[SETTINGS.keys.left];
+    return keys['ArrowLeft'] || keys['KeyA'];
+}
+function isRight() {
+    if (SETTINGS.keys.right) return !!keys[SETTINGS.keys.right];
+    return keys['ArrowRight'] || keys['KeyD'];
+}
+function isJump() {
+    if (SETTINGS.keys.jump) return !!keys[SETTINGS.keys.jump];
+    return keys['ArrowUp'] || keys['KeyW'] || keys['Space'];
+}
 
 // ── UTILITY ─────────────────────────────────────────────────
 function rect(x, y, w, h, color) {

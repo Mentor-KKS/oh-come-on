@@ -58,57 +58,87 @@ class Player {
             return;
         }
 
-        // Horizontal movement — mit Beschleunigung für flüssiges Gefühl
-        const inv = game.levelData && game.levelData.invertControls;
-        const goLeft = inv ? isRight() : isLeft();
-        const goRight = inv ? isLeft() : isRight();
-        if (goLeft) {
-            this.vx -= CFG.accel;
-            if (this.vx < -CFG.moveSpeed) this.vx = -CFG.moveSpeed;
-            this.facingRight = false;
-        } else if (goRight) {
-            this.vx += CFG.accel;
-            if (this.vx > CFG.moveSpeed) this.vx = CFG.moveSpeed;
-            this.facingRight = true;
-        } else {
-            this.vx *= CFG.friction;
-            if (Math.abs(this.vx) < 0.05) this.vx = 0;
-        }
-
-        // Jumping
-        if (this.grounded) this.coyote = CFG.coyoteTime;
-        else this.coyote--;
-
-        if (this.gDir === undefined) this.gDir = (game.levelData && game.levelData.gravityDir) || 1;
-        const gDir = this.gDir;
-
-        if (isJump() && !this.jumpPressed && this.coyote > 0) {
-            if (game.levelData && game.levelData.jumpFlipsGravity) {
-                // Jump flippt Gravity statt Sprung
-                this.gDir *= -1;
-                this.vy = 0;
-            } else {
-                // Normaler Sprung
-                this.vy = CFG.jumpForce * gDir;
-                this.squash = 0.6;
-                this.stretch = 1.3;
+        // === FLAPPY MODE: komplett andere Physik ===
+        if (game.levelData && game.levelData.flappyMode) {
+            // AutoRun: automatische Bewegung nach rechts
+            if (game.levelData.autoRun) {
+                this.vx = game.levelData.autoRun;
+                this.facingRight = true;
             }
-            this.coyote = 0;
-            this.jumpPressed = true;
-            SFX.jump();
-        }
-        if (!isJump()) this.jumpPressed = false;
+            // Flappy Jump: kleiner Impuls, kein Grounded-Check
+            if (isJump() && !this.jumpPressed) {
+                this.vy = -3.5;
+                this.jumpPressed = true;
+                this.squash = 0.7;
+                this.stretch = 1.2;
+                SFX.jump();
+            }
+            if (!isJump()) this.jumpPressed = false;
+            // Stärkere Gravity
+            this.vy += CFG.gravity * 2.5;
+            if (this.vy > CFG.maxFallSpeed * 1.5) this.vy = CFG.maxFallSpeed * 1.5;
+        } else {
+            // === NORMALE PHYSIK ===
 
-        // Variable jump height (richtungsabhängig)
-        if (this.vy * gDir < -2 && !isJump()) {
-            this.vy *= 0.85;
-        }
+            // Horizontal movement
+            if (game.levelData && game.levelData.autoRun) {
+                // AutoRun: automatische Geschwindigkeit
+                this.vx = game.levelData.autoRun;
+                this.facingRight = true;
+            } else {
+                const inv = game.levelData && game.levelData.invertControls;
+                const goLeft = inv ? isRight() : isLeft();
+                const goRight = inv ? isLeft() : isRight();
+                const maxSpd = this.onIce ? CFG.moveSpeed * 2.5 : CFG.moveSpeed;
+                const accel = this.onIce ? CFG.accel * 0.15 : CFG.accel;
+                if (goLeft) {
+                    this.vx -= accel;
+                    if (this.vx < -maxSpd) this.vx = -maxSpd;
+                    this.facingRight = false;
+                } else if (goRight) {
+                    this.vx += accel;
+                    if (this.vx > maxSpd) this.vx = maxSpd;
+                    this.facingRight = true;
+                } else {
+                    const friction = this.onIce ? 0.99 : CFG.friction;
+                    this.vx *= friction;
+                    if (Math.abs(this.vx) < 0.05) this.vx = 0;
+                }
+            }
 
-        // Gravity (richtungsabhängig)
-        this.vy += CFG.gravity * gDir;
-        // Fall-Speed-Cap nur in Gravitationsrichtung (nicht gegen Sprung!)
-        if (this.vy * gDir > CFG.maxFallSpeed) {
-            this.vy = CFG.maxFallSpeed * gDir;
+            // Jumping
+            if (this.grounded) this.coyote = CFG.coyoteTime;
+            else this.coyote--;
+
+            if (this.gDir === undefined) this.gDir = (game.levelData && game.levelData.gravityDir) || 1;
+            const gDir = this.gDir;
+
+            if (isJump() && !this.jumpPressed && this.coyote > 0) {
+                if (game.levelData && game.levelData.jumpFlipsGravity) {
+                    this.gDir *= -1;
+                    this.vy = 0;
+                } else {
+                    this.vy = CFG.jumpForce * gDir;
+                    this.squash = 0.6;
+                    this.stretch = 1.3;
+                }
+                this.coyote = 0;
+                this.jumpPressed = true;
+                SFX.jump();
+            }
+            if (!isJump()) this.jumpPressed = false;
+
+            // Variable jump height (richtungsabhängig)
+            const gDir2 = this.gDir || 1;
+            if (this.vy * gDir2 < -2 && !isJump()) {
+                this.vy *= 0.85;
+            }
+
+            // Gravity (richtungsabhängig)
+            this.vy += CFG.gravity * gDir2;
+            if (this.vy * gDir2 > CFG.maxFallSpeed) {
+                this.vy = CFG.maxFallSpeed * gDir2;
+            }
         }
 
         // Move X & collide (inkl. externer Kraft wie Wind)
@@ -134,6 +164,16 @@ class Player {
         if (this.y > levelH + 50 || this.y < -50 || this.x < -50 || this.x > levelW + 50) {
             this.die();
         }
+        // Vertical Scroll: Tod wenn unter sichtbarem Bereich
+        if (game.levelData && game.levelData.verticalScroll) {
+            if (this.y > game.cameraY + H + 30) this.die();
+        }
+        // AutoScroll: Tod wenn hinter Kamera
+        if (game.levelData && game.levelData.autoScroll) {
+            if (this.x + this.w < game.cameraX) this.die();
+        }
+        // onIce nur resetten wenn am Boden — beim Springen bleibt Ice-Momentum erhalten
+        if (this.grounded) this.onIce = false;
     }
 
     resolveCollisions(platforms, axis) {
