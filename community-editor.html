@@ -55,8 +55,8 @@
         #testOverlay .bar .back { color:#e74c3c; border:1px solid #e74c3c; cursor:pointer; }
 
         #shareOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; }
-        #shareBox { background:#1a1a2e; border:2px solid #2ecc71; border-radius:8px; padding:24px; width:500px; max-width:90%; }
-        #shareBox h3 { color:#2ecc71; margin-bottom:12px; }
+        .overlayBox { background:#1a1a2e; border:2px solid #2ecc71; border-radius:8px; padding:24px; width:500px; max-width:90%; }
+        .overlayBox h3 { color:#2ecc71; margin-bottom:12px; }
     </style>
 </head>
 <body>
@@ -106,6 +106,7 @@
                         <optgroup label="Zones">
                             <option value="iceZone">Ice Zone</option>
                             <option value="windZone">Wind Zone</option>
+                            <option value="invertTriggerLine">Invert Trigger Line</option>
                             <option value="invertZone">Invert Zone</option>
                             <option value="darknessOverlay">Darkness Overlay</option>
                         </optgroup>
@@ -145,6 +146,7 @@
             <div class="panel-body">
                 <button class="big" onclick="testLevel()" style="background:#2ecc71;color:#000;">&#9654; Test Level</button>
                 <button class="big" onclick="showShare()" style="margin-top:5px;background:#3498db;color:#fff;">Share Level Code</button>
+                <button class="big" onclick="showLevelFileExport()" style="margin-top:5px;background:#f39c12;color:#111;border-color:#d68910;">Export JS Level File</button>
                 <button class="big" onclick="showImport()" style="margin-top:5px;">Import Level Code</button>
                 <button onclick="window.location.href='index.html'" style="width:100%;margin-top:8px;padding:8px;font-size:13px;background:#e74c3c;color:#fff;border-color:#c0392b;">← Back to Game</button>
             </div>
@@ -159,9 +161,17 @@
             <input type="number" id="snapSize" value="5" style="width:40px;background:#0a0a15;color:#fff;border:1px solid #444;padding:2px 4px;font-family:inherit;">
             <label>Jump Arc:</label>
             <input type="checkbox" id="showArc" onchange="render()">
+            <label>Shot Path:</label>
+            <input type="checkbox" id="showShotPath" onchange="render()">
             <label style="margin-left:15px;">Zoom:</label>
             <input type="range" id="zoomRange" min="0.5" max="2" step="0.1" value="1" oninput="render()">
             <span id="zoomLabel" style="font-size:12px;color:#888;">1x</span>
+            <div style="width:1px;height:18px;background:#333;margin:0 4px;"></div>
+            <button id="undoBtn" onclick="undoEdit()">Undo</button>
+            <button id="redoBtn" onclick="redoEdit()">Redo</button>
+            <button id="duplicateBtn" onclick="duplicateSelected()">Duplicate</button>
+            <button id="copyBtn" onclick="copySelected()">Copy</button>
+            <button id="pasteBtn" onclick="pasteClipboard()">Paste</button>
         </div>
         <div id="canvasWrap">
             <canvas id="gameCanvas" width="800" height="500"></canvas>
@@ -180,7 +190,7 @@
 
     <!-- Share Overlay -->
     <div id="shareOverlay" onclick="if(event.target===this)this.style.display='none'">
-        <div id="shareBox">
+        <div class="overlayBox">
             <h3>Share Level</h3>
             <p style="color:#888;font-size:12px;margin-bottom:10px;">Copy this code and share it!</p>
             <textarea id="shareCode" rows="6" readonly onclick="this.select()"></textarea>
@@ -188,9 +198,19 @@
         </div>
     </div>
 
+    <div id="fileExportOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="overlayBox" style="background:#1a1a2e;border:2px solid #f39c12;border-radius:8px;padding:24px;width:680px;max-width:92%;">
+            <h3 style="color:#f39c12;">Export JS Level File</h3>
+            <p style="color:#888;font-size:12px;margin-bottom:10px;">This creates a standalone <code>.js</code> level file you can keep as a test level or later turn into a normal game level.</p>
+            <textarea id="fileExportCode" rows="16" readonly onclick="this.select()"></textarea>
+            <button onclick="downloadLevelFile()" style="width:100%;margin-top:8px;padding:8px;font-size:13px;background:#f39c12;color:#111;border-color:#d68910;">Download .js File</button>
+            <button onclick="copyLevelFileCode()" style="width:100%;margin-top:8px;padding:8px;font-size:13px;">Copy JS Code</button>
+        </div>
+    </div>
+
     <!-- Import Overlay -->
     <div id="importOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
-        <div id="shareBox" style="background:#1a1a2e;border:2px solid #3498db;border-radius:8px;padding:24px;width:500px;max-width:90%;">
+        <div class="overlayBox" style="background:#1a1a2e;border:2px solid #3498db;border-radius:8px;padding:24px;width:500px;max-width:90%;">
             <h3 style="color:#3498db;">Import Level</h3>
             <p style="color:#888;font-size:12px;margin-bottom:10px;">Paste a level code:</p>
             <textarea id="importCode" rows="6" placeholder="Paste level code here..."></textarea>
@@ -257,6 +277,14 @@
     let testAccum = 0;
     let lastClickHits = [];
     let cycleIndex = 0;
+    let dragChanged = false;
+    let dragMode = 'move';
+    let editorClipboard = null;
+    let historyPast = [];
+    let historyFuture = [];
+    let suspendHistory = false;
+    let validationIssues = [];
+    let validationIssueKeys = new Set();
 
     // ── TOAST ─────────────────────────────────────────────
     function showToast(msg) {
@@ -271,6 +299,94 @@
         toast.style.opacity = '1';
         clearTimeout(toast._timer);
         toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+    }
+
+    function deepCloneData(data) {
+        return JSON.parse(JSON.stringify(data));
+    }
+
+    function selectionToSignature(sel = selected) {
+        return sel ? { type: sel.type, index: sel.index ?? 0 } : null;
+    }
+
+    function getSelectionFromSignature(sig, lvl = currentLvl) {
+        if (!sig) return null;
+        if (sig.type === 'player') return lvl.player ? { type:'player', index:0, ref:lvl.player } : null;
+        if (sig.type === 'exit') return lvl.exit ? { type:'exit', index:0, ref:lvl.exit } : null;
+        const arr = sig.type === 'platform' ? lvl.platforms : sig.type === 'spike' ? lvl.spikes : lvl.traps;
+        if (!arr || !arr[sig.index]) return null;
+        if (sig.type === 'trap') syncTrapEditorGeometry(arr[sig.index]);
+        return { type:sig.type, index:sig.index, ref:arr[sig.index] };
+    }
+
+    function updateActionButtons() {
+        const canClone = !!selected && ['platform','spike','trap'].includes(selected.type);
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+        const duplicateBtn = document.getElementById('duplicateBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const pasteBtn = document.getElementById('pasteBtn');
+        if (undoBtn) undoBtn.disabled = historyPast.length <= 1;
+        if (redoBtn) redoBtn.disabled = historyFuture.length === 0;
+        if (duplicateBtn) duplicateBtn.disabled = !canClone;
+        if (copyBtn) copyBtn.disabled = !canClone;
+        if (pasteBtn) pasteBtn.disabled = !editorClipboard;
+    }
+
+    function captureEditorState() {
+        return {
+            json: serializeLevel(currentLvl),
+            selection: selectionToSignature(),
+        };
+    }
+
+    function applyEditorState(snapshot) {
+        suspendHistory = true;
+        currentLvl = deserializeLevel(snapshot.json);
+        selected = getSelectionFromSignature(snapshot.selection, currentLvl);
+        suspendHistory = false;
+        document.getElementById('info').textContent = currentLvl.name;
+        refreshValidationMarkers();
+        updateProps();
+        updateElementList();
+        render();
+        updateActionButtons();
+    }
+
+    function resetHistory() {
+        historyPast = [captureEditorState()];
+        historyFuture = [];
+        updateActionButtons();
+    }
+
+    function pushHistory() {
+        if (suspendHistory) return;
+        const snapshot = captureEditorState();
+        const last = historyPast[historyPast.length - 1];
+        if (last && last.json === snapshot.json && JSON.stringify(last.selection) === JSON.stringify(snapshot.selection)) {
+            updateActionButtons();
+            return;
+        }
+        historyPast.push(snapshot);
+        if (historyPast.length > 80) historyPast.shift();
+        historyFuture = [];
+        updateActionButtons();
+    }
+
+    function undoEdit() {
+        if (historyPast.length <= 1) return;
+        historyFuture.push(captureEditorState());
+        historyPast.pop();
+        applyEditorState(historyPast[historyPast.length - 1]);
+        showToast('Undo');
+    }
+
+    function redoEdit() {
+        if (!historyFuture.length) return;
+        const snapshot = historyFuture.pop();
+        historyPast.push(snapshot);
+        applyEditorState(snapshot);
+        showToast('Redo');
     }
 
     // ── TOOL ──────────────────────────────────────────────
@@ -292,6 +408,198 @@
         return { x: (sx - rect.left) * (800 * z / rect.width) / z, y: (sy - rect.top) * (500 * z / rect.height) / z };
     }
 
+    function syncTrapEditorGeometry(trap) {
+        if (!trap || !trap.type) return;
+
+        if (trap.type === 'darknessOverlay') {
+            if (trap.w === undefined) trap.w = 60;
+            if (trap.h === undefined) trap.h = 30;
+            if (trap.x === undefined) trap.x = 370;
+            if (trap.y === undefined) trap.y = 235;
+            return;
+        }
+
+        if (trap.type === 'invertTriggerLine') {
+            trap.w = 50;
+            trap.h = 80;
+            if (trap.triggerX === undefined) trap.triggerX = trap.x !== undefined ? trap.x + trap.w / 2 : 400;
+            trap.x = trap.triggerX - trap.w / 2;
+            if (trap.y === undefined) trap.y = 18;
+            return;
+        }
+
+        if (trap.type === 'invertZone') {
+            if (trap.w === undefined) trap.w = 140;
+            if (trap.h === undefined) trap.h = 90;
+            if (trap.x === undefined) trap.x = 330;
+            if (trap.y === undefined) trap.y = 205;
+            if (trap.entryPadding === undefined) trap.entryPadding = 24;
+            return;
+        }
+
+        if (trap.type === 'fakeSpikes' && trap.spikes && trap.spikes.length) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            trap.spikes.forEach(s => {
+                minX = Math.min(minX, s.x);
+                minY = Math.min(minY, s.y);
+                maxX = Math.max(maxX, s.x + (s.w || 16));
+                maxY = Math.max(maxY, s.y + (s.h || 15));
+            });
+            trap.x = minX;
+            trap.y = minY;
+            trap.w = Math.max(20, maxX - minX);
+            trap.h = Math.max(20, maxY - minY);
+            return;
+        }
+
+        if (trap.type === 'risingDeath') {
+            if (trap.w === undefined) trap.w = 92;
+            if (trap.h === undefined) trap.h = 24;
+            if (trap.startY === undefined) trap.startY = trap.y !== undefined ? trap.y + trap.h / 2 : 470;
+            if (trap.x === undefined) trap.x = 14;
+            trap.y = trap.startY - trap.h / 2;
+            return;
+        }
+
+        if (trap.type === 'chasingWall') {
+            if (trap.w === undefined) trap.w = 92;
+            if (trap.h === undefined) trap.h = 24;
+            if (trap.x === undefined) trap.x = 14;
+            if (trap.y === undefined) trap.y = 50;
+            return;
+        }
+    }
+
+    function moveTrapEditorHandle(trap, newX, newY) {
+        if (!trap) return;
+        syncTrapEditorGeometry(trap);
+        const dx = newX - trap.x;
+        const dy = newY - trap.y;
+
+        if (trap.type === 'fakeSpikes' && trap.spikes) {
+            trap.spikes.forEach(s => {
+                s.x += dx;
+                s.y += dy;
+            });
+        }
+
+        if (trap.type === 'shootingSpike' || trap.type === 'fallingCeiling') {
+            const mode = trap.triggerMode || 'x';
+            if (mode === 'x' && trap.triggerX !== undefined) trap.triggerX += dx;
+            if (mode === 'y' && trap.triggerY !== undefined) trap.triggerY += dy;
+            if (mode === 'area' && trap.triggerArea) {
+                trap.triggerArea.x += dx;
+                trap.triggerArea.y += dy;
+            }
+        }
+
+        trap.x = newX;
+        trap.y = newY;
+
+        if (trap.type === 'invertTriggerLine') {
+            trap.triggerX = trap.x + trap.w / 2;
+        }
+        if (trap.type === 'risingDeath') {
+            trap.startY = trap.y + trap.h / 2;
+        }
+
+        syncTrapEditorGeometry(trap);
+    }
+
+    function isExitVisibleForPlayer(exitObj, player) {
+        if (!exitObj || !player) return false;
+        if (exitObj.showAboveY && player.y >= exitObj.showAboveY) return false;
+        if (exitObj.showBelowX && player.x >= exitObj.showBelowX) return false;
+        if (exitObj.revealArea) {
+            const px = player.x + (player.w || 20) / 2;
+            const py = player.y + (player.h || 20) / 2;
+            const a = exitObj.revealArea;
+            return px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h;
+        }
+        return true;
+    }
+
+    function resizeFakeSpikes(trap, newW, newH) {
+        if (!trap || trap.type !== 'fakeSpikes' || !trap.spikes || !trap.spikes.length) return;
+        syncTrapEditorGeometry(trap);
+        const oldX = trap.x;
+        const oldY = trap.y;
+        const oldW = Math.max(1, trap.w || 20);
+        const oldH = Math.max(1, trap.h || 20);
+        const targetW = Math.max(10, snap(newW));
+        const targetH = Math.max(10, snap(newH));
+        trap.spikes = trap.spikes.map(s => ({
+            ...s,
+            x: oldX + ((s.x - oldX) / oldW) * targetW,
+            y: oldY + ((s.y - oldY) / oldH) * targetH,
+            w: Math.max(10, ((s.w || 20) / oldW) * targetW),
+            h: Math.max(10, ((s.h || 20) / oldH) * targetH),
+        }));
+        syncTrapEditorGeometry(trap);
+    }
+
+    function pointInRect(wx, wy, rect) {
+        return !!rect && wx >= rect.x && wx <= rect.x + rect.w && wy >= rect.y && wy <= rect.y + rect.h;
+    }
+
+    function getHandleRect(rect, size = 12) {
+        if (!rect || rect.w === undefined || rect.h === undefined) return null;
+        return {
+            x: rect.x + rect.w - size / 2,
+            y: rect.y + rect.h - size / 2,
+            w: size,
+            h: size,
+        };
+    }
+
+    function getSelectedAreaRect() {
+        if (!selected) return null;
+        if (selected.type === 'trap') {
+            const t = selected.ref;
+            if ((t.type === 'shootingSpike' || t.type === 'fallingCeiling') && t.triggerMode === 'area' && t.triggerArea) {
+                return t.triggerArea;
+            }
+        }
+        if (selected.type === 'exit' && selected.ref.revealArea) {
+            return selected.ref.revealArea;
+        }
+        return null;
+    }
+
+    function canResizeSelectedElement() {
+        if (!selected) return false;
+        if (selected.type === 'player') return false;
+        if (selected.type === 'trap' && selected.ref.type === 'invertTriggerLine') return false;
+        return selected.ref && selected.ref.w !== undefined && selected.ref.h !== undefined;
+    }
+
+    function resizeSelectedElement(newW, newH) {
+        if (!selected || !canResizeSelectedElement()) return;
+        const targetW = Math.max(10, snap(newW));
+        const targetH = Math.max(10, snap(newH));
+        if (selected.type === 'trap' && selected.ref.type === 'fakeSpikes') {
+            resizeFakeSpikes(selected.ref, targetW, targetH);
+            return;
+        }
+        selected.ref.w = targetW;
+        selected.ref.h = targetH;
+        if (selected.type === 'trap') syncTrapEditorGeometry(selected.ref);
+    }
+
+    function moveSelectedArea(newX, newY) {
+        const area = getSelectedAreaRect();
+        if (!area) return;
+        area.x = snap(newX);
+        area.y = snap(newY);
+    }
+
+    function resizeSelectedArea(newW, newH) {
+        const area = getSelectedAreaRect();
+        if (!area) return;
+        area.w = Math.max(10, snap(newW));
+        area.h = Math.max(10, snap(newH));
+    }
+
     // ── HIT TEST ──────────────────────────────────────────
     function hitTestAll(wx, wy) {
         const lvl = currentLvl;
@@ -303,6 +611,7 @@
         const ps = lvl.player;
         if (wx >= ps.x && wx <= ps.x+20 && wy >= ps.y && wy <= ps.y+20) hits.push({ type:'player', index:0, ref:ps });
         if (lvl.exit) { const e = lvl.exit; if (wx >= e.x && wx <= e.x+e.w && wy >= e.y && wy <= e.y+e.h) hits.push({ type:'exit', index:0, ref:e }); }
+        lvl.traps.forEach(syncTrapEditorGeometry);
         const trapsBySize = [...lvl.traps.entries()].filter(([i,t]) => t.x !== undefined && t.w !== undefined);
         trapsBySize.sort((a,b) => (a[1].w*a[1].h) - (b[1].w*b[1].h));
         for (const [i,t] of trapsBySize) {
@@ -323,10 +632,38 @@
         mouseX = w.x; mouseY = w.y;
         document.getElementById('coords').textContent = `Mouse: (${Math.round(w.x)}, ${Math.round(w.y)})`;
         if (dragging && selected && tool === 'select') {
-            selected.ref.x = snap(w.x - dragOffX);
-            selected.ref.y = snap(w.y - dragOffY);
-            if (selected.ref.origX !== undefined) selected.ref.origX = selected.ref.x;
-            if (selected.ref.origY !== undefined) selected.ref.origY = selected.ref.y;
+            if (dragMode === 'resize-element') {
+                const prevW = selected.ref.w;
+                const prevH = selected.ref.h;
+                resizeSelectedElement(w.x - selected.ref.x, w.y - selected.ref.y);
+                if (selected.ref.w !== prevW || selected.ref.h !== prevH) dragChanged = true;
+            } else if (dragMode === 'move-area') {
+                const area = getSelectedAreaRect();
+                const prevX = area?.x;
+                const prevY = area?.y;
+                moveSelectedArea(w.x - dragOffX, w.y - dragOffY);
+                if (area && (area.x !== prevX || area.y !== prevY)) dragChanged = true;
+            } else if (dragMode === 'resize-area') {
+                const area = getSelectedAreaRect();
+                const prevW = area?.w;
+                const prevH = area?.h;
+                if (area) resizeSelectedArea(w.x - area.x, w.y - area.y);
+                if (area && (area.w !== prevW || area.h !== prevH)) dragChanged = true;
+            } else {
+                const nextX = snap(w.x - dragOffX);
+                const nextY = snap(w.y - dragOffY);
+                const prevX = selected.ref.x;
+                const prevY = selected.ref.y;
+                if (selected.type === 'trap') {
+                    moveTrapEditorHandle(selected.ref, nextX, nextY);
+                } else {
+                    selected.ref.x = nextX;
+                    selected.ref.y = nextY;
+                    if (selected.ref.origX !== undefined) selected.ref.origX = selected.ref.x;
+                    if (selected.ref.origY !== undefined) selected.ref.origY = selected.ref.y;
+                }
+                if (selected.ref.x !== prevX || selected.ref.y !== prevY) dragChanged = true;
+            }
             updateProps();
         }
         render();
@@ -336,6 +673,25 @@
         if (testRunning) return;
         const w = screenToWorld(e.clientX, e.clientY);
         if (tool === 'select') {
+            const areaRect = getSelectedAreaRect();
+            const areaHandle = getHandleRect(areaRect);
+            const elementHandle = canResizeSelectedElement() ? getHandleRect(selected.ref) : null;
+            if (pointInRect(w.x, w.y, areaHandle)) {
+                dragging = true; dragChanged = false; dragMode = 'resize-area';
+                updateProps(); updateElementList(); render();
+                return;
+            }
+            if (pointInRect(w.x, w.y, areaRect)) {
+                dragging = true; dragChanged = false; dragMode = 'move-area';
+                dragOffX = w.x - areaRect.x; dragOffY = w.y - areaRect.y;
+                updateProps(); updateElementList(); render();
+                return;
+            }
+            if (pointInRect(w.x, w.y, elementHandle)) {
+                dragging = true; dragChanged = false; dragMode = 'resize-element';
+                updateProps(); updateElementList(); render();
+                return;
+            }
             const hits = hitTestAll(w.x, w.y);
             if (hits.length > 1) {
                 const sameSpot = lastClickHits.length === hits.length && hits.every((h,i) => lastClickHits[i] && h.type === lastClickHits[i].type && h.index === lastClickHits[i].index);
@@ -348,10 +704,12 @@
                     const lvl = currentLvl;
                     if (selected.type === 'platform') { const c = {...selected.ref}; lvl.platforms.push(c); selected = {type:'platform',index:lvl.platforms.length-1,ref:c}; }
                     else if (selected.type === 'spike') { const c = {...selected.ref}; lvl.spikes.push(c); selected = {type:'spike',index:lvl.spikes.length-1,ref:c}; }
-                    else if (selected.type === 'trap') { const c = cloneTrap(selected.ref,0,0); lvl.traps.push(c); selected = {type:'trap',index:lvl.traps.length-1,ref:c}; }
+                    else if (selected.type === 'trap') { const c = cloneTrap(selected.ref,20,20); lvl.traps.push(c); selected = {type:'trap',index:lvl.traps.length-1,ref:c}; }
+                    refreshValidationMarkers();
                     updateElementList();
+                    pushHistory();
                 }
-                dragging = true; dragOffX = w.x - selected.ref.x; dragOffY = w.y - selected.ref.y;
+                dragging = true; dragChanged = false; dragMode = 'move'; dragOffX = w.x - selected.ref.x; dragOffY = w.y - selected.ref.y;
             }
             updateProps(); updateElementList();
         } else if (tool === 'add') {
@@ -360,22 +718,47 @@
         render();
     });
 
-    edCanvas.addEventListener('mouseup', () => { if (testRunning) return; dragging = false; render(); });
+    edCanvas.addEventListener('mouseup', () => {
+        if (testRunning) return;
+        if (dragging && dragChanged) {
+            refreshValidationMarkers();
+            pushHistory();
+        }
+        dragging = false;
+        dragChanged = false;
+        dragMode = 'move';
+        render();
+    });
 
     // ── KEYBOARD ──────────────────────────────────────────
     window.addEventListener('keydown', (e) => {
         if (testRunning) { if (e.code === 'Escape') { e.preventDefault(); stopTest(); } return; }
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+            e.preventDefault();
+            if (e.shiftKey) redoEdit();
+            else undoEdit();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') { e.preventDefault(); redoEdit(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') { e.preventDefault(); duplicateSelected(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') { e.preventDefault(); copySelected(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') { e.preventDefault(); pasteClipboard(); return; }
         if (e.code === 'Delete' && selected) { e.preventDefault(); deleteSelected(); }
         if (e.code === 'Escape') { selected = null; updateProps(); render(); }
         if (selected && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) {
             e.preventDefault();
             const s = e.shiftKey ? 1 : (+document.getElementById('snapSize').value || 5);
-            if (e.code === 'ArrowLeft') selected.ref.x -= s;
-            if (e.code === 'ArrowRight') selected.ref.x += s;
-            if (e.code === 'ArrowUp') selected.ref.y -= s;
-            if (e.code === 'ArrowDown') selected.ref.y += s;
+            const nextX = selected.ref.x + (e.code === 'ArrowLeft' ? -s : e.code === 'ArrowRight' ? s : 0);
+            const nextY = selected.ref.y + (e.code === 'ArrowUp' ? -s : e.code === 'ArrowDown' ? s : 0);
+            if (selected.type === 'trap') moveTrapEditorHandle(selected.ref, nextX, nextY);
+            else {
+                selected.ref.x = nextX;
+                selected.ref.y = nextY;
+            }
+            refreshValidationMarkers();
             updateProps(); render();
+            pushHistory();
         }
     });
 
@@ -388,22 +771,63 @@
             case 'dodgingPlatform': return new DodgingPlatform(x,y,t.w,t.h,t.dodgeX||x+100,t.triggerRange||80);
             case 'trollShaker': return new TrollShaker(x,y,t.w,t.h);
             case 'timedFloor': return new TimedFloor(x,y,t.w,t.h,t.delay||120);
-            case 'togglePlatform': return new TogglePlatform(x,y,t.w,t.h,t.group||'A');
-            case 'movingPlatform': return new MovingPlatform(x,y,t.w,t.h,x,(t.targetX||x)+ox,t.speed||0.5);
+            case 'togglePlatform': return new TogglePlatform(x,y,t.w,t.h,t.group||'A',t.initialActive ?? t.active ?? false);
+            case 'movingPlatform': return new MovingPlatform(
+                x, y, t.w, t.h,
+                t.targetX !== undefined ? t.targetX + ox : x + 100,
+                t.targetY !== undefined ? t.targetY + oy : y,
+                t.speed || 0.5,
+                t.disappearAt
+            );
             case 'hiddenPlatform': return new HiddenPlatform(x,y,t.w,t.h,{x:x-50,y:y-80,w:200,h:100});
             case 'triggerFloor': return new TriggerFloor(x,y,t.w,t.h,t.triggerX||x);
-            case 'fallingCeiling': return new FallingCeiling(x,y,t.w,t.h,t.triggerX||x,t.fake||false);
-            case 'shootingSpike': case 'shootingSpikeDisguised': return new ShootingSpike(x,y,t.dir||'left',t.triggerX||x,t.speed||4,null,null,t.disguised||false);
+            case 'fallingCeiling': {
+                const c = new FallingCeiling(x,y,t.w,t.h,t.triggerX||x,t.fake||false);
+                if (t.triggerMode) c.triggerMode = t.triggerMode;
+                if (t.triggerY !== undefined) c.triggerY = t.triggerY + oy;
+                if (t.triggerDist !== undefined) c.triggerDist = t.triggerDist;
+                if (t.triggerArea) c.triggerArea = { x:t.triggerArea.x + ox, y:t.triggerArea.y + oy, w:t.triggerArea.w, h:t.triggerArea.h };
+                return c;
+            }
+            case 'shootingSpike': case 'shootingSpikeDisguised': {
+                const s = new ShootingSpike(x,y,t.dir||'left',t.triggerX||x,t.speed||4,null,null,t.disguised||false);
+                if (t.triggerMode) s.triggerMode = t.triggerMode;
+                if (t.triggerY !== undefined) s.triggerY = t.triggerY + oy;
+                if (t.triggerDist !== undefined) s.triggerDist = t.triggerDist;
+                if (t.triggerArea) s.triggerArea = { x:t.triggerArea.x + ox, y:t.triggerArea.y + oy, w:t.triggerArea.w, h:t.triggerArea.h };
+                return s;
+            }
             case 'movingSpike': return new MovingSpike(t.x1||x,t.y1||y,(t.x2||x+100)+ox,(t.y2||y)+oy,t.speed||0.01);
-            case 'risingDeath': return new RisingDeath(t.speed||0.3,t.startDelay||120,t.startY);
-            case 'chasingWall': return new ChasingWall(t.speed||0.5,t.startDelay||90);
-            case 'fakeExit': return new FakeExit(x,y);
-            case 'fakeSpikes': return new FakeSpikes(t.spikes?t.spikes.map(s=>({x:s.x+ox,y:s.y+oy,w:s.w,h:s.h,dir:s.dir})):[{x,y,w:25,h:15,dir:'up'}]);
+            case 'risingDeath': {
+                const r = new RisingDeath(t.speed||0.3,t.startDelay||120,(t.startY ?? y + 12) + oy);
+                r.x = x; r.y = (t.y ?? ((t.startY ?? y + 12) - 12)) + oy; r.w = t.w ?? 92; r.h = t.h ?? 24;
+                syncTrapEditorGeometry(r);
+                return r;
+            }
+            case 'chasingWall': {
+                const c = new ChasingWall(t.speed||0.5,t.startDelay||90);
+                c.x = x; c.y = y; c.w = t.w ?? 92; c.h = t.h ?? 24;
+                syncTrapEditorGeometry(c);
+                return c;
+            }
+            case 'fakeExit': return new FakeExit(x,y,t.showAboveY);
+            case 'fakeSpikes': return new FakeSpikes(t.spikes?t.spikes.map(s=>({x:s.x+ox,y:s.y+oy,w:s.w,h:s.h,dir:s.dir})):[{x,y,w:20,h:20,dir:'up'}]);
             case 'killZone': return new KillZone(x,y,t.w||50,t.h||50);
             case 'iceZone': return new IceZone(x,y,t.w||150,t.h||50);
-            case 'windZone': return new WindZone(x,y,t.w||100,t.h||100,t.vx||0,t.vy||0);
-            case 'invertZone': return new InvertZone(x,y);
-            case 'darknessOverlay': return new DarknessOverlay();
+            case 'windZone': return new WindZone(x,y,t.w||100,t.h||100,t.force ?? t.vx ?? 0,t.forceY ?? t.vy ?? 0);
+            case 'invertTriggerLine': {
+                const z = new InvertTriggerLine((t.triggerX ?? x) + ox);
+                z.x = x; z.y = y; z.w = 50; z.h = 80;
+                syncTrapEditorGeometry(z);
+                return z;
+            }
+            case 'invertZone': {
+                const z = new InvertZone(x, y, t.w ?? 140, t.h ?? 90);
+                if (t.entryPadding !== undefined) z.entryPadding = t.entryPadding;
+                syncTrapEditorGeometry(z);
+                return z;
+            }
+            case 'darknessOverlay': { const d = new DarknessOverlay(t.radius||95); d.x=x; d.y=y; d.w=60; d.h=30; syncTrapEditorGeometry(d); return d; }
             case 'switch': return new Switch(x,y,t.group||'A');
             case 'movingExit': return new MovingExit(t.positions?t.positions.map(p=>({x:p.x+ox,y:p.y+oy})):[{x,y}]);
             default: return { x,y,w:t.w||30,h:t.h||20,type:t.type||'unknown',update(){},draw(){ctx.fillStyle='#f1c40f';ctx.globalAlpha=0.5;ctx.fillRect(this.x,this.y,this.w,this.h);ctx.globalAlpha=1;},reset(){} };
@@ -413,8 +837,14 @@
     // ── ADD / DELETE ──────────────────────────────────────
     function addElement(x, y) {
         const type = document.getElementById('addType').value;
-        if (type === 'platform') currentLvl.platforms.push({x,y,w:100,h:20});
-        else if (type === 'spike') currentLvl.spikes.push({x,y,w:20,h:20,dir:'up'});
+        if (type === 'platform') {
+            currentLvl.platforms.push({x,y,w:100,h:20});
+            selected = { type:'platform', index:currentLvl.platforms.length - 1, ref:currentLvl.platforms[currentLvl.platforms.length - 1] };
+        }
+        else if (type === 'spike') {
+            currentLvl.spikes.push({x,y,w:20,h:20,dir:'up'});
+            selected = { type:'spike', index:currentLvl.spikes.length - 1, ref:currentLvl.spikes[currentLvl.spikes.length - 1] };
+        }
         else {
             let trap;
             switch(type) {
@@ -426,34 +856,50 @@
                 case 'shootingSpike': trap = new ShootingSpike(x,y,'left',x-100,4); break;
                 case 'shootingSpikeDisguised': trap = new ShootingSpike(x,y,'left',x-100,4,null,null,true); break;
                 case 'timedFloor': trap = new TimedFloor(x,y,100,20,120); break;
-                case 'movingPlatform': trap = new MovingPlatform(x,y,80,20,x,x+100,0.5); break;
-                case 'togglePlatform': trap = new TogglePlatform(x,y,80,20,'A'); break;
+                case 'movingPlatform': trap = new MovingPlatform(x,y,80,20,x+100,y,0.5); break;
+                case 'togglePlatform': trap = new TogglePlatform(x,y,80,20,'A',false); break;
                 case 'hiddenPlatform': trap = new HiddenPlatform(x,y,100,20,{x:x-50,y:y-80,w:200,h:100}); break;
                 case 'movingSpike': trap = new MovingSpike(x,y,x+100,y,0.01); break;
-                case 'risingDeath': trap = new RisingDeath(0.3,120); break;
+                case 'risingDeath': trap = new RisingDeath(0.3,120,y); break;
                 case 'chasingWall': trap = new ChasingWall(0.5,90); break;
                 case 'fakeExit': trap = new FakeExit(x,y); break;
-                case 'fakeSpike': trap = new FakeSpikes([{x,y,w:25,h:15,dir:'up'}]); break;
+                case 'fakeSpike': trap = new FakeSpikes([{x,y,w:20,h:20,dir:'up'}]); break;
                 case 'killZone': trap = new KillZone(x,y,50,50); break;
                 case 'iceZone': trap = new IceZone(x,y,150,50); break;
                 case 'windZone': trap = new WindZone(x,y,100,100,0.5,0); break;
-                case 'invertZone': trap = new InvertZone(x,y); break;
-                case 'darknessOverlay': trap = new DarknessOverlay(); break;
+                case 'invertTriggerLine': trap = new InvertTriggerLine(x); break;
+                case 'invertZone': trap = new InvertZone(x,y,140,90); break;
+                case 'darknessOverlay': { trap = new DarknessOverlay(); trap.x = x; trap.y = y; trap.w = 60; trap.h = 30; } break;
                 case 'switch': trap = new Switch(x,y,'A'); break;
                 case 'movingExit': trap = new MovingExit([{x,y:y-20}]); break;
             }
-            if (trap) currentLvl.traps.push(trap);
+            if (trap) {
+                if (trap.type === 'fakeSpikes') syncTrapEditorGeometry(trap);
+                if (trap.type === 'invertTriggerLine') { trap.x = x - 25; trap.y = y; trap.w = 50; trap.h = 80; syncTrapEditorGeometry(trap); }
+                if (trap.type === 'invertZone') syncTrapEditorGeometry(trap);
+                if (trap.type === 'risingDeath') { trap.x = x; trap.y = y - 12; trap.w = 92; trap.h = 24; syncTrapEditorGeometry(trap); }
+                if (trap.type === 'chasingWall') { trap.x = x; trap.y = y; trap.w = 92; trap.h = 24; syncTrapEditorGeometry(trap); }
+                currentLvl.traps.push(trap);
+                selected = { type:'trap', index:currentLvl.traps.length - 1, ref:trap };
+            }
         }
-        updateElementList(); render();
+        refreshValidationMarkers();
+        updateProps(); updateElementList(); render();
+        pushHistory();
     }
 
     function deleteSelected() {
         if (!selected) return;
+        const deletedTrap = selected.type === 'trap' ? selected.ref : null;
         if (selected.type === 'platform') currentLvl.platforms.splice(selected.index,1);
         else if (selected.type === 'spike') currentLvl.spikes.splice(selected.index,1);
         else if (selected.type === 'trap') currentLvl.traps.splice(selected.index,1);
         else if (selected.type === 'exit') currentLvl.exit = null;
-        selected = null; updateProps(); updateElementList(); render();
+        if (deletedTrap && (deletedTrap.type === 'invertTriggerLine' || (deletedTrap.type === 'invertZone' && deletedTrap.mode === 'line'))) currentLvl.invertControls = false;
+        selected = null;
+        refreshValidationMarkers();
+        updateProps(); updateElementList(); render();
+        pushHistory();
     }
 
     // ── PROPERTIES ────────────────────────────────────────
@@ -463,12 +909,26 @@
         const r = selected.ref;
         let html = `<div style="color:#2ecc71;font-size:12px;margin-bottom:6px;">${(selected.type + (r.type ? ' ('+r.type+')' : '')).toUpperCase()}</div>`;
         html += propRow('X', r.x); html += propRow('Y', r.y);
-        if (r.w !== undefined) html += propRow('W', r.w);
-        if (r.h !== undefined) html += propRow('H', r.h);
+        const hideSize = selected.type === 'trap' && r.type === 'invertTriggerLine';
+        if (!hideSize && r.w !== undefined) html += propRow('W', r.w);
+        if (!hideSize && r.h !== undefined) html += propRow('H', r.h);
         if (r.dir !== undefined && selected.type === 'spike') {
             html += `<div class="row"><label>Dir:</label><select onchange="selected.ref.dir=this.value;render()">
                 <option ${r.dir==='up'?'selected':''}>up</option><option ${r.dir==='down'?'selected':''}>down</option>
                 <option ${r.dir==='left'?'selected':''}>left</option><option ${r.dir==='right'?'selected':''}>right</option></select></div>`;
+        }
+        if (selected.type === 'exit') {
+            const area = r.revealArea;
+            html += '<div style="margin-top:6px;border-top:1px solid #333;padding-top:6px;color:#2ecc71;font-size:10px;margin-bottom:4px;">Visibility:</div>';
+            html += `<div class="row"><label>Show Above Y:</label><input type="number" value="${Math.round(r.showAboveY ?? 0)}" step="5" onchange="setTP('showAboveY',+this.value);updateProps();render();"></div>`;
+            html += `<div class="row"><label>Hide Below X:</label><input type="number" value="${Math.round(r.showBelowX ?? 0)}" step="5" onchange="setTP('showBelowX',+this.value);updateProps();render();"></div>`;
+            html += `<div class="row"><label>Reveal Mode:</label><select onchange="setTP('exitRevealMode',this.value);updateProps();render();"><option${area?'':' selected'}>none</option><option${area?' selected':''}>area</option></select></div>`;
+            if (area) {
+                html += `<div class="row"><label>Area X:</label><input type="number" value="${Math.round(area.x)}" step="5" onchange="setTP('revealAreaX',+this.value);updateProps();render();"></div>`;
+                html += `<div class="row"><label>Area Y:</label><input type="number" value="${Math.round(area.y)}" step="5" onchange="setTP('revealAreaY',+this.value);updateProps();render();"></div>`;
+                html += `<div class="row"><label>Area W:</label><input type="number" value="${Math.round(area.w)}" step="5" onchange="setTP('revealAreaW',+this.value);updateProps();render();"></div>`;
+                html += `<div class="row"><label>Area H:</label><input type="number" value="${Math.round(area.h)}" step="5" onchange="setTP('revealAreaH',+this.value);updateProps();render();"></div>`;
+            }
         }
         // Trap-spezifische Parameter
         if (selected.type === 'trap' && r.type) {
@@ -500,11 +960,11 @@
             }
             if (t === 'togglePlatform') {
                 tp.push({ key:'group', label:'Group', val: r.group||'A', dropdown:['A','B','C','D'] });
-                tp.push({ key:'active', label:'Start Active', val: r.active?'yes':'no', dropdown:['yes','no'] });
+                tp.push({ key:'active', label:'Start Active', val: (r.initialActive ?? r.active) ? 'yes':'no', dropdown:['yes','no'] });
             }
             if (t === 'movingPlatform') {
-                tp.push({ key:'targetX', label:'Target X', val: r.targetX||0 });
-                tp.push({ key:'targetY', label:'Target Y', val: r.targetY||r.y });
+                tp.push({ key:'targetX', label:'Target X', val: r.targetX ?? 0 });
+                tp.push({ key:'targetY', label:'Target Y', val: r.targetY ?? r.y });
                 tp.push({ key:'speed', label:'Speed', val: r.speed||0.5 });
             }
             if (t === 'hiddenPlatform') {
@@ -513,13 +973,33 @@
 
             // Hazards
             if (t === 'fallingCeiling') {
-                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                tp.push({ key:'triggerMode', label:'Trigger Mode', val: r.triggerMode||'x', dropdown:['x','y','proximity','area'] });
+                if ((r.triggerMode||'x') === 'x') tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                if ((r.triggerMode||'x') === 'y') tp.push({ key:'triggerY', label:'Trigger Y', val: r.triggerY||0 });
+                if ((r.triggerMode||'x') === 'proximity') tp.push({ key:'triggerDist', label:'Trigger Dist', val: r.triggerDist||60 });
+                if ((r.triggerMode||'x') === 'area') {
+                    const a = r.triggerArea || { x:r.x - 20, y:r.y + r.h, w:r.w + 40, h:80 };
+                    tp.push({ key:'triggerAreaX', label:'Area X', val: a.x });
+                    tp.push({ key:'triggerAreaY', label:'Area Y', val: a.y });
+                    tp.push({ key:'triggerAreaW', label:'Area W', val: a.w });
+                    tp.push({ key:'triggerAreaH', label:'Area H', val: a.h });
+                }
                 tp.push({ key:'fake', label:'Fake (nur visuell)', val: r.fake?'yes':'no', dropdown:['no','yes'] });
             }
             if (t === 'shootingSpike') {
+                tp.push({ key:'triggerMode', label:'Trigger Mode', val: r.triggerMode||'x', dropdown:['x','y','proximity','area'] });
                 tp.push({ key:'dir', label:'Shoot Dir', val: (r.dir===1||r.dir==='right')?'right':(r.dir==='up')?'up':(r.dir==='down')?'down':'left', dropdown:['left','right','up','down'] });
                 tp.push({ key:'speed', label:'Speed', val: r.speed||4 });
-                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                if ((r.triggerMode||'x') === 'x') tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX||0 });
+                if ((r.triggerMode||'x') === 'y') tp.push({ key:'triggerY', label:'Trigger Y', val: r.triggerY||0 });
+                if ((r.triggerMode||'x') === 'proximity') tp.push({ key:'triggerDist', label:'Trigger Dist', val: r.triggerDist||80 });
+                if ((r.triggerMode||'x') === 'area') {
+                    const a = r.triggerArea || { x:r.x - 40, y:r.y - 20, w:80, h:60 };
+                    tp.push({ key:'triggerAreaX', label:'Area X', val: a.x });
+                    tp.push({ key:'triggerAreaY', label:'Area Y', val: a.y });
+                    tp.push({ key:'triggerAreaW', label:'Area W', val: a.w });
+                    tp.push({ key:'triggerAreaH', label:'Area H', val: a.h });
+                }
                 tp.push({ key:'disguised', label:'Disguised', val: r.disguised?'yes':'no', dropdown:['no','yes'] });
             }
             if (t === 'risingSpikes') {
@@ -537,11 +1017,12 @@
                 tp.push({ key:'speed', label:'Speed', val: r.speed||0.01 });
             }
             if (t === 'fakeExit') {
-                tp.push({ key:'showAboveY', label:'Show Above Y', val: r.showAboveY||0 });
+                tp.push({ key:'showAboveY', label:'Show Above Y', val: r.showAboveY ?? 0 });
             }
             if (t === 'risingDeath') {
                 tp.push({ key:'speed', label:'Speed', val: r.speed||0.3 });
                 tp.push({ key:'startDelay', label:'Start Delay', val: r.startDelay||120 });
+                tp.push({ key:'startY', label:'Start Y', val: r.startY ?? (r.y + r.h / 2) });
             }
             if (t === 'chasingWall') {
                 tp.push({ key:'speed', label:'Speed', val: r.speed||0.5 });
@@ -553,11 +1034,14 @@
                 // Keine extra Settings (Zone = rutschig)
             }
             if (t === 'windZone') {
-                tp.push({ key:'vx', label:'Wind X', val: r.vx||0 });
-                tp.push({ key:'vy', label:'Wind Y', val: r.vy||0 });
+                tp.push({ key:'force', label:'Wind X', val: r.force ?? r.vx ?? 0 });
+                tp.push({ key:'forceY', label:'Wind Y', val: r.forceY ?? r.vy ?? 0 });
+            }
+            if (t === 'invertTriggerLine') {
+                tp.push({ key:'triggerX', label:'Trigger X', val: r.triggerX ?? (r.x + r.w / 2) });
             }
             if (t === 'invertZone') {
-                // Keine extra Settings (flippt Controls)
+                tp.push({ key:'entryPadding', label:'Entry Buffer', val: r.entryPadding ?? 24 });
             }
             if (t === 'darknessOverlay') {
                 tp.push({ key:'radius', label:'Light Radius', val: r.radius||95 });
@@ -588,43 +1072,332 @@
                 html += '<div style="margin-top:6px;border-top:1px solid #333;padding-top:6px;color:#2ecc71;font-size:10px;">Waypoints (last = STOP):</div>';
                 r.positions.forEach((p,pi) => {
                     const isLast = pi === r.positions.length-1;
-                    html += `<div class="row"><label>${isLast?'STOP':'#'+(pi+1)}:</label><input type="number" value="${Math.round(p.x)}" style="width:55px" onchange="selected.ref.positions[${pi}].x=+this.value;render()"><input type="number" value="${Math.round(p.y)}" style="width:55px" onchange="selected.ref.positions[${pi}].y=+this.value;render()">
-                    ${r.positions.length>1?`<span style="color:#e74c3c;cursor:pointer;" onclick="selected.ref.positions.splice(${pi},1);updateProps();render()">X</span>`:''}</div>`;
+                    html += `<div class="row"><label>${isLast?'STOP':'#'+(pi+1)}:</label><input type="number" value="${Math.round(p.x)}" style="width:55px" onchange="setWaypointCoord(${pi},'x',+this.value)"><input type="number" value="${Math.round(p.y)}" style="width:55px" onchange="setWaypointCoord(${pi},'y',+this.value)">
+                    ${r.positions.length>1?`<span style="color:#e74c3c;cursor:pointer;" onclick="removeWaypoint(${pi})">X</span>`:''}</div>`;
                 });
-                html += `<button onclick="selected.ref.positions.push({x:selected.ref.positions[selected.ref.positions.length-1].x+80,y:selected.ref.positions[selected.ref.positions.length-1].y});updateProps();render();" style="width:100%;margin-top:4px;">+ Waypoint</button>`;
+                html += `<button onclick="addWaypoint()" style="width:100%;margin-top:4px;">+ Waypoint</button>`;
             }
         }
 
         if (selected.type !== 'player') html += `<button class="danger" onclick="deleteSelected()" style="margin-top:8px;width:100%;">Delete</button>`;
         body.innerHTML = html;
         body.querySelectorAll('input[data-prop]').forEach(inp => {
-            inp.onchange = () => { selected.ref[inp.dataset.prop] = +inp.value; render(); };
+            inp.onchange = () => {
+                const prop = inp.dataset.prop;
+                const val = +inp.value;
+                if (selected.type === 'trap' && (prop === 'x' || prop === 'y')) {
+                    const nextX = prop === 'x' ? val : selected.ref.x;
+                    const nextY = prop === 'y' ? val : selected.ref.y;
+                    moveTrapEditorHandle(selected.ref, nextX, nextY);
+                } else if (selected.type === 'trap' && selected.ref.type === 'fakeSpikes' && (prop === 'w' || prop === 'h')) {
+                    const nextW = prop === 'w' ? val : selected.ref.w;
+                    const nextH = prop === 'h' ? val : selected.ref.h;
+                    resizeFakeSpikes(selected.ref, nextW, nextH);
+                } else {
+                    selected.ref[prop] = (prop === 'w' || prop === 'h') ? snap(val) : val;
+                    if (selected.type === 'trap') syncTrapEditorGeometry(selected.ref);
+                }
+                refreshValidationMarkers();
+                updateProps();
+                render();
+                pushHistory();
+            };
         });
+        updateActionButtons();
     }
     function propRow(l, v) { return `<div class="row"><label>${l}:</label><input type="number" value="${Math.round(v)}" data-prop="${l.toLowerCase()}"></div>`; }
 
     function setTP(key, val) {
         if (!selected) return;
         if (key === 'dir') selected.ref.dir = val;
+        else if (key === 'exitRevealMode') {
+            if (val === 'area') {
+                selected.ref.revealArea = selected.ref.revealArea || { x:selected.ref.x - 40, y:selected.ref.y - 20, w:120, h:100 };
+            } else {
+                delete selected.ref.revealArea;
+            }
+        }
+        else if (key === 'triggerMode') {
+            selected.ref.triggerMode = val;
+            if (val === 'x' && selected.ref.triggerX === undefined) selected.ref.triggerX = selected.ref.x - 40;
+            if (val === 'y' && selected.ref.triggerY === undefined) selected.ref.triggerY = selected.ref.y;
+            if (val === 'proximity' && selected.ref.triggerDist === undefined) selected.ref.triggerDist = 80;
+            if (val === 'area' && !selected.ref.triggerArea) {
+                selected.ref.triggerArea = { x:selected.ref.x - 40, y:selected.ref.y - 20, w:80, h:60 };
+            }
+        }
         else if (key === 'disguised') selected.ref.disguised = (val === 'yes');
         else if (key === 'fake') selected.ref.fake = (val === 'yes');
-        else if (key === 'active') selected.ref.active = (val === 'yes');
+        else if (key === 'active') { selected.ref.active = (val === 'yes'); selected.ref.initialActive = selected.ref.active; }
         else if (key === 'group') selected.ref.group = val;
+        else if (key === 'triggerAreaX' || key === 'triggerAreaY' || key === 'triggerAreaW' || key === 'triggerAreaH') {
+            if (!selected.ref.triggerArea) selected.ref.triggerArea = { x:selected.ref.x - 40, y:selected.ref.y - 20, w:80, h:60 };
+            const map = { triggerAreaX:'x', triggerAreaY:'y', triggerAreaW:'w', triggerAreaH:'h' };
+            selected.ref.triggerArea[map[key]] = (key === 'triggerAreaW' || key === 'triggerAreaH') ? snap(val) : val;
+        }
+        else if (key === 'revealAreaX' || key === 'revealAreaY' || key === 'revealAreaW' || key === 'revealAreaH') {
+            if (!selected.ref.revealArea) selected.ref.revealArea = { x:selected.ref.x - 40, y:selected.ref.y - 20, w:120, h:100 };
+            const map = { revealAreaX:'x', revealAreaY:'y', revealAreaW:'w', revealAreaH:'h' };
+            selected.ref.revealArea[map[key]] = (key === 'revealAreaW' || key === 'revealAreaH') ? snap(val) : val;
+        }
         else selected.ref[key] = val;
+        if (selected.type === 'trap') {
+            if (key === 'triggerX' && selected.ref.type === 'invertTriggerLine') {
+                selected.ref.triggerX = +val;
+            }
+            if (key === 'startY' && selected.ref.type === 'risingDeath') {
+                selected.ref.startY = +val;
+            }
+            syncTrapEditorGeometry(selected.ref);
+        }
+        refreshValidationMarkers();
+        pushHistory();
+    }
+
+    function setWaypointCoord(index, axis, value) {
+        if (!selected || selected.type !== 'trap' || selected.ref.type !== 'movingExit' || !selected.ref.positions?.[index]) return;
+        selected.ref.positions[index][axis] = snap(value);
+        refreshValidationMarkers();
+        updateProps();
+        render();
+        pushHistory();
+    }
+
+    function removeWaypoint(index) {
+        if (!selected || selected.type !== 'trap' || selected.ref.type !== 'movingExit' || selected.ref.positions.length <= 1) return;
+        selected.ref.positions.splice(index, 1);
+        refreshValidationMarkers();
+        updateProps();
+        render();
+        pushHistory();
+    }
+
+    function addWaypoint() {
+        if (!selected || selected.type !== 'trap' || selected.ref.type !== 'movingExit' || !selected.ref.positions?.length) return;
+        const last = selected.ref.positions[selected.ref.positions.length - 1];
+        selected.ref.positions.push({ x:snap(last.x + 80), y:snap(last.y) });
+        refreshValidationMarkers();
+        updateProps();
+        render();
+        pushHistory();
     }
 
     function updateElementList() {
         const el = document.getElementById('elements');
         const lvl = currentLvl;
-        let html = `<div class="elem-item" style="color:#3498db" onclick="selectByRef('player')">Player (${lvl.player.x}, ${lvl.player.y})</div>`;
-        if (lvl.exit) html += `<div class="elem-item" style="color:#2ecc71" onclick="selectByRef('exit')">Exit (${lvl.exit.x}, ${lvl.exit.y})</div>`;
-        lvl.platforms.forEach((p,i) => html += `<div class="elem-item${selected&&selected.type==='platform'&&selected.index===i?' selected':''}" style="color:#d0d0d0" onclick="selectByIdx('platform',${i})">${p.w<=10&&p.h>=400?'Wall':'Platform'} (${p.x},${p.y})</div>`);
-        lvl.spikes.forEach((s,i) => html += `<div class="elem-item${selected&&selected.type==='spike'&&selected.index===i?' selected':''}" style="color:#e74c3c" onclick="selectByIdx('spike',${i})">Spike ${s.dir} (${s.x},${s.y})</div>`);
-        lvl.traps.forEach((t,i) => html += `<div class="elem-item${selected&&selected.type==='trap'&&selected.index===i?' selected':''}" style="color:#f1c40f" onclick="selectByIdx('trap',${i})">${t.type} (${Math.round(t.x)},${Math.round(t.y)})</div>`);
+        lvl.traps.forEach(syncTrapEditorGeometry);
+        const issueFlag = key => validationIssueKeys.has(key) ? ' <span style="color:#e74c3c;font-weight:bold;">!</span>' : '';
+        const issueStyle = key => validationIssueKeys.has(key) ? 'border-left-color:#e74c3c;color:#ff9f9f;' : '';
+        let html = `<div class="elem-item" style="color:#3498db;${issueStyle('player:0')}" onclick="selectByRef('player')">Player (${lvl.player.x}, ${lvl.player.y})${issueFlag('player:0')}</div>`;
+        if (lvl.exit) html += `<div class="elem-item" style="color:#2ecc71;${issueStyle('exit:0')}" onclick="selectByRef('exit')">Exit (${lvl.exit.x}, ${lvl.exit.y})${issueFlag('exit:0')}</div>`;
+        else if (validationIssueKeys.has('exit:0')) html += `<div class="elem-item" style="color:#ff9f9f;${issueStyle('exit:0')}">Missing Exit${issueFlag('exit:0')}</div>`;
+        lvl.platforms.forEach((p,i) => html += `<div class="elem-item${selected&&selected.type==='platform'&&selected.index===i?' selected':''}" style="color:#d0d0d0;${issueStyle(`platform:${i}`)}" onclick="selectByIdx('platform',${i})">${p.w<=10&&p.h>=400?'Wall':'Platform'} (${p.x},${p.y})${issueFlag(`platform:${i}`)}</div>`);
+        lvl.spikes.forEach((s,i) => html += `<div class="elem-item${selected&&selected.type==='spike'&&selected.index===i?' selected':''}" style="color:#e74c3c;${issueStyle(`spike:${i}`)}" onclick="selectByIdx('spike',${i})">Spike ${s.dir} (${s.x},${s.y})${issueFlag(`spike:${i}`)}</div>`);
+        lvl.traps.forEach((t,i) => html += `<div class="elem-item${selected&&selected.type==='trap'&&selected.index===i?' selected':''}" style="color:#f1c40f;${issueStyle(`trap:${i}`)}" onclick="selectByIdx('trap',${i})">${t.type} (${Math.round(t.x ?? t.triggerX ?? t.positions?.[0]?.x ?? t.spikes?.[0]?.x ?? 0)},${Math.round(t.y ?? t.positions?.[0]?.y ?? t.spikes?.[0]?.y ?? 0)})${issueFlag(`trap:${i}`)}</div>`);
         el.innerHTML = html;
+        updateActionButtons();
     }
     function selectByRef(type) { selected = { type, index:0, ref: type==='player'?currentLvl.player:currentLvl.exit }; updateProps(); updateElementList(); render(); }
-    function selectByIdx(type, i) { const arr = type==='platform'?currentLvl.platforms:type==='spike'?currentLvl.spikes:currentLvl.traps; selected={type,index:i,ref:arr[i]}; updateProps(); updateElementList(); render(); }
+    function selectByIdx(type, i) {
+        const arr = type==='platform'?currentLvl.platforms:type==='spike'?currentLvl.spikes:currentLvl.traps;
+        if (type === 'trap') syncTrapEditorGeometry(arr[i]);
+        selected={type,index:i,ref:arr[i]};
+        updateProps(); updateElementList(); render();
+    }
+
+    function serializeTrapData(t) {
+        const d = { type:t.type, x:t.x, y:t.y, w:t.w, h:t.h };
+        if (t.radius !== undefined) d.radius = t.radius;
+        if (t.entryPadding !== undefined) d.entryPadding = t.entryPadding;
+        if (t.delay !== undefined) d.delay = t.delay;
+        if (t.fadeDelay !== undefined) d.fadeDelay = t.fadeDelay;
+        if (t.triggerX !== undefined) d.triggerX = t.triggerX;
+        if (t.triggerY !== undefined) d.triggerY = t.triggerY;
+        if (t.triggerDist !== undefined) d.triggerDist = t.triggerDist;
+        if (t.triggerMode) d.triggerMode = t.triggerMode;
+        if (t.triggerArea) d.triggerArea = deepCloneData(t.triggerArea);
+        if (t.speed !== undefined) d.speed = t.speed;
+        if (t.dir !== undefined) d.dir = t.dir;
+        if (t.disguised) d.disguised = true;
+        if (t.dodgeX !== undefined) d.dodgeX = t.dodgeX;
+        if (t.triggerRange !== undefined) d.triggerRange = t.triggerRange;
+        if (t.group !== undefined) d.group = t.group;
+        if (t.active !== undefined) d.active = t.active;
+        if (t.initialActive !== undefined) d.initialActive = t.initialActive;
+        if (t.fake !== undefined) d.fake = t.fake;
+        if (t.targetX !== undefined) d.targetX = t.targetX;
+        if (t.targetY !== undefined) d.targetY = t.targetY;
+        if (t.disappearAt !== undefined) d.disappearAt = t.disappearAt;
+        if (t.x1 !== undefined) d.x1 = t.x1;
+        if (t.y1 !== undefined) d.y1 = t.y1;
+        if (t.x2 !== undefined) d.x2 = t.x2;
+        if (t.y2 !== undefined) d.y2 = t.y2;
+        if (t.startDelay !== undefined) d.startDelay = t.startDelay;
+        if (t.startY !== undefined) d.startY = t.startY;
+        if (t.showAboveY !== undefined) d.showAboveY = t.showAboveY;
+        if (t.force !== undefined) d.force = t.force;
+        if (t.forceY !== undefined) d.forceY = t.forceY;
+        if (t.vx !== undefined) d.vx = t.vx;
+        if (t.vy !== undefined) d.vy = t.vy;
+        if (t.spikes) d.spikes = deepCloneData(t.spikes);
+        if (t.positions) d.positions = deepCloneData(t.positions);
+        return d;
+    }
+
+    function deserializeTrapData(td, ox = 0, oy = 0) {
+        const normalized = (td.type === 'invertZone' && td.triggerX !== undefined)
+            ? { ...td, type: 'invertTriggerLine' }
+            : td;
+        const trap = cloneTrap(normalized, ox, oy);
+        for (const k in td) {
+            if (k === 'type' || typeof td[k] === 'object') continue;
+            if (k === 'x') trap.x = td.x + ox;
+            else if (k === 'y') trap.y = td.y + oy;
+            else if (k === 'triggerX') trap.triggerX = td.triggerX + ox;
+            else if (k === 'targetX') trap.targetX = td.targetX + ox;
+            else if (k === 'targetY') trap.targetY = td.targetY + oy;
+            else if (k === 'x1') trap.x1 = td.x1 + ox;
+            else if (k === 'y1') trap.y1 = td.y1 + oy;
+            else if (k === 'x2') trap.x2 = td.x2 + ox;
+            else if (k === 'y2') trap.y2 = td.y2 + oy;
+            else if (k === 'startY') trap.startY = td.startY + oy;
+            else if (k === 'showAboveY') trap.showAboveY = td.showAboveY + oy;
+            else trap[k] = td[k];
+        }
+        if (td.positions) trap.positions = td.positions.map(p => ({ x:p.x + ox, y:p.y + oy }));
+        if (td.triggerArea) trap.triggerArea = { ...td.triggerArea, x:td.triggerArea.x + ox, y:td.triggerArea.y + oy };
+        if (td.spikes) trap.spikes = td.spikes.map(s => ({ ...s, x:s.x + ox, y:s.y + oy }));
+        syncTrapEditorGeometry(trap);
+        return trap;
+    }
+
+    function copySelected(silent = false) {
+        if (!selected || !['platform','spike','trap'].includes(selected.type)) {
+            showToast('Select a platform, spike or trap');
+            return;
+        }
+        editorClipboard = {
+            type: selected.type,
+            data: selected.type === 'trap' ? serializeTrapData(selected.ref) : deepCloneData(selected.ref),
+        };
+        updateActionButtons();
+        if (!silent) showToast('Copied');
+    }
+
+    function pasteClipboard(silent = false) {
+        if (!editorClipboard) return;
+        const lvl = currentLvl;
+        if (editorClipboard.type === 'platform') {
+            const p = deepCloneData(editorClipboard.data);
+            p.x = snap((p.x ?? 0) + 20);
+            p.y = snap((p.y ?? 0) + 20);
+            if (p.w !== undefined) p.w = snap(p.w);
+            if (p.h !== undefined) p.h = snap(p.h);
+            lvl.platforms.push(p);
+            selected = { type:'platform', index:lvl.platforms.length - 1, ref:p };
+        } else if (editorClipboard.type === 'spike') {
+            const s = deepCloneData(editorClipboard.data);
+            s.x = snap((s.x ?? 0) + 20);
+            s.y = snap((s.y ?? 0) + 20);
+            lvl.spikes.push(s);
+            selected = { type:'spike', index:lvl.spikes.length - 1, ref:s };
+        } else if (editorClipboard.type === 'trap') {
+            const t = deserializeTrapData(editorClipboard.data, 20, 20);
+            lvl.traps.push(t);
+            selected = { type:'trap', index:lvl.traps.length - 1, ref:t };
+        }
+        refreshValidationMarkers();
+        updateProps();
+        updateElementList();
+        render();
+        pushHistory();
+        if (!silent) showToast('Pasted');
+    }
+
+    function duplicateSelected() {
+        if (!selected || !['platform','spike','trap'].includes(selected.type)) {
+            showToast('Select a platform, spike or trap');
+            return;
+        }
+        copySelected(true);
+        pasteClipboard(true);
+        showToast('Duplicated');
+    }
+
+    function setValidationResults(issues) {
+        validationIssues = issues;
+        validationIssueKeys = new Set(issues.map(issue => issue.key));
+    }
+
+    function collectValidationIssues(lvl) {
+        const issues = [];
+        const num = value => Number.isFinite(+value);
+        const positive = value => num(value) && +value > 0;
+        if (!lvl.player) issues.push({ key:'player:0', label:'Start', message:'Start fehlt.' });
+        if (!lvl.exit) issues.push({ key:'exit:0', label:'Exit', message:'Exit fehlt.' });
+        else if (!positive(lvl.exit.w) || !positive(lvl.exit.h)) issues.push({ key:'exit:0', label:'Exit', message:'Exit braucht eine gueltige Breite und Hoehe.' });
+        else if (lvl.exit.revealArea && (!positive(lvl.exit.revealArea.w) || !positive(lvl.exit.revealArea.h))) issues.push({ key:'exit:0', label:'Exit', message:'Reveal Area braucht gueltige W/H.' });
+        lvl.traps.forEach((t, i) => {
+            const key = `trap:${i}`;
+            if ((t.x !== undefined && !num(t.x)) || (t.y !== undefined && !num(t.y))) {
+                issues.push({ key, label:`${t.type} #${i + 1}`, message:'X/Y sind ungueltig.' });
+                return;
+            }
+            if (t.w !== undefined && !positive(t.w)) {
+                issues.push({ key, label:`${t.type} #${i + 1}`, message:'Breite muss groesser als 0 sein.' });
+                return;
+            }
+            if (t.h !== undefined && !positive(t.h)) {
+                issues.push({ key, label:`${t.type} #${i + 1}`, message:'Hoehe muss groesser als 0 sein.' });
+                return;
+            }
+            if (t.type === 'invertTriggerLine' && !num(t.triggerX)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger X fehlt.' });
+            else if (t.type === 'movingPlatform' && (!num(t.targetX) || !num(t.targetY))) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Target X/Y fehlen.' });
+            else if (t.type === 'movingSpike' && (!num(t.x1) || !num(t.y1) || !num(t.x2) || !num(t.y2))) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Start- und Endpunkt fehlen.' });
+            else if (t.type === 'risingDeath' && !num(t.startY)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Start Y fehlt.' });
+            else if (t.type === 'darknessOverlay' && !positive(t.radius)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Light Radius muss groesser als 0 sein.' });
+            else if (t.type === 'windZone' && !(num(t.force ?? t.vx ?? 0) || num(t.forceY ?? t.vy ?? 0))) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Wind braucht eine gueltige Richtung.' });
+            else if (t.type === 'windZone' && Math.abs((t.force ?? t.vx ?? 0)) < 0.001 && Math.abs((t.forceY ?? t.vy ?? 0)) < 0.001) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Wind ist aktuell auf 0 gesetzt.' });
+            else if (t.type === 'fallingCeiling' && (t.triggerMode || 'x') === 'x' && !num(t.triggerX)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger X fehlt.' });
+            else if (t.type === 'fallingCeiling' && t.triggerMode === 'y' && !num(t.triggerY)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger Y fehlt.' });
+            else if (t.type === 'fallingCeiling' && t.triggerMode === 'proximity' && !positive(t.triggerDist)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger Dist muss groesser als 0 sein.' });
+            else if (t.type === 'fallingCeiling' && t.triggerMode === 'area' && (!t.triggerArea || !positive(t.triggerArea.w) || !positive(t.triggerArea.h))) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger Area braucht gueltige X/Y/W/H.' });
+            else if (t.type === 'shootingSpike' && (t.triggerMode || 'x') === 'x' && !num(t.triggerX)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger X fehlt.' });
+            else if (t.type === 'shootingSpike' && t.triggerMode === 'y' && !num(t.triggerY)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger Y fehlt.' });
+            else if (t.type === 'shootingSpike' && t.triggerMode === 'proximity' && !positive(t.triggerDist)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger Dist muss groesser als 0 sein.' });
+            else if (t.type === 'shootingSpike' && t.triggerMode === 'area' && (!t.triggerArea || !positive(t.triggerArea.w) || !positive(t.triggerArea.h))) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Trigger Area braucht gueltige X/Y/W/H.' });
+            else if (t.type === 'fakeSpikes' && (!Array.isArray(t.spikes) || !t.spikes.length)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Braucht mindestens einen Spike.' });
+            else if (t.type === 'movingExit' && (!Array.isArray(t.positions) || !t.positions.length)) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Braucht mindestens einen Waypoint.' });
+            else if (t.type === 'switch' && !t.group) issues.push({ key, label:`${t.type} #${i + 1}`, message:'Group fehlt.' });
+        });
+        return issues;
+    }
+
+    function refreshValidationMarkers() {
+        setValidationResults(collectValidationIssues(currentLvl));
+    }
+
+    function focusValidationIssue(issue) {
+        if (!issue) return;
+        const [type, rawIndex] = issue.key.split(':');
+        selected = getSelectionFromSignature({ type, index:+rawIndex || 0 }, currentLvl);
+    }
+
+    function ensureLevelValid(actionLabel) {
+        refreshValidationMarkers();
+        updateElementList();
+        render();
+        if (!validationIssues.length) return true;
+        focusValidationIssue(validationIssues[0]);
+        updateProps();
+        updateElementList();
+        render();
+        const lines = validationIssues.slice(0, 8).map(issue => `- ${issue.label}: ${issue.message}`);
+        const extra = validationIssues.length > 8 ? `\n- ... und ${validationIssues.length - 8} weitere` : '';
+        alert(`Level kann noch nicht ${actionLabel} werden:\n\n${lines.join('\n')}${extra}`);
+        showToast(`${validationIssues.length} Problem${validationIssues.length === 1 ? '' : 'e'} gefunden`);
+        return false;
+    }
 
     // ── SAVE / LOAD LEVELS ────────────────────────────────
     function serializeLevel(lvl) {
@@ -634,22 +1407,7 @@
             exit: lvl.exit,
             platforms: lvl.platforms,
             spikes: lvl.spikes,
-            traps: lvl.traps.map(t => {
-                const d = { type:t.type, x:t.x, y:t.y, w:t.w, h:t.h };
-                if (t.triggerX !== undefined) d.triggerX = t.triggerX;
-                if (t.triggerDist !== undefined) d.triggerDist = t.triggerDist;
-                if (t.triggerMode) d.triggerMode = t.triggerMode;
-                if (t.triggerArea) d.triggerArea = t.triggerArea;
-                if (t.speed !== undefined) d.speed = t.speed;
-                if (t.dir !== undefined) d.dir = t.dir;
-                if (t.disguised) d.disguised = true;
-                if (t.dodgeX !== undefined) d.dodgeX = t.dodgeX;
-                if (t.triggerRange !== undefined) d.triggerRange = t.triggerRange;
-                if (t.vx !== undefined) d.vx = t.vx;
-                if (t.vy !== undefined) d.vy = t.vy;
-                if (t.positions) d.positions = t.positions;
-                return d;
-            }),
+            traps: lvl.traps.map(serializeTrapData),
         });
     }
 
@@ -661,13 +1419,7 @@
             exit: d.exit,
             platforms: d.platforms,
             spikes: d.spikes,
-            traps: (d.traps || []).map(td => {
-                const trap = cloneTrap(td, 0, 0);
-                for (const k in td) { if (k !== 'type' && typeof td[k] !== 'object') trap[k] = td[k]; }
-                if (td.positions) trap.positions = JSON.parse(JSON.stringify(td.positions));
-                if (td.triggerArea) trap.triggerArea = JSON.parse(JSON.stringify(td.triggerArea));
-                return trap;
-            }),
+            traps: (d.traps || []).map(td => deserializeTrapData(td, 0, 0)),
         };
     }
 
@@ -691,6 +1443,8 @@
         if (!saved[name]) return;
         currentLvl = deserializeLevel(saved[name]);
         selected = null;
+        refreshValidationMarkers();
+        resetHistory();
         updateProps(); updateElementList(); render();
         document.getElementById('info').textContent = currentLvl.name;
         showToast('Level "' + name + '" loaded!');
@@ -708,6 +1462,8 @@
         if (!name) return;
         currentLvl = createBlankLevel(name);
         selected = null;
+        refreshValidationMarkers();
+        resetHistory();
         updateProps(); updateElementList(); render();
         document.getElementById('info').textContent = name;
     }
@@ -720,8 +1476,111 @@
         el.innerHTML = names.map(n => `<div class="slot-item" onclick="loadLevel('${n}')"><span>${n}</span><span class="del" onclick="event.stopPropagation();deleteSavedLevel('${n}')">X</span></div>`).join('');
     }
 
+    function formatJsLiteral(value, indent = 0) {
+        const pad = ' '.repeat(indent);
+        const nextPad = ' '.repeat(indent + 4);
+        if (Array.isArray(value)) {
+            if (!value.length) return '[]';
+            return `[\n${value.map(item => `${nextPad}${formatJsLiteral(item, indent + 4)}`).join(',\n')}\n${pad}]`;
+        }
+        if (value && typeof value === 'object') {
+            const entries = Object.entries(value).filter(([, v]) => v !== undefined);
+            if (!entries.length) return '{}';
+            return `{\n${entries.map(([key, val]) => `${nextPad}${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key)}: ${formatJsLiteral(val, indent + 4)}`).join(',\n')}\n${pad}}`;
+        }
+        return JSON.stringify(value);
+    }
+
+    function withAssignedProps(baseCode, extraProps) {
+        const filtered = Object.fromEntries(Object.entries(extraProps).filter(([, value]) => value !== undefined));
+        return Object.keys(filtered).length ? `Object.assign(${baseCode}, ${formatJsLiteral(filtered)})` : baseCode;
+    }
+
+    function generateTrapCode(t) {
+        switch (t.type) {
+            case 'fallingFloor': return `new FallingFloor(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
+            case 'fakeFloor': return `new FakeFloor(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
+            case 'dodgingPlatform': return `new DodgingPlatform(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.dodgeX ?? (t.x + 100)}, ${t.triggerRange ?? 80})`;
+            case 'trollShaker': return `new TrollShaker(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
+            case 'timedFloor': return `new TimedFloor(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.delay ?? 120})`;
+            case 'togglePlatform': return `new TogglePlatform(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${JSON.stringify(t.group ?? 'A')}, ${t.initialActive ?? t.active ?? false})`;
+            case 'movingPlatform': return `new MovingPlatform(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.targetX ?? (t.x + 100)}, ${t.targetY ?? t.y}, ${t.speed ?? 0.5}, ${t.disappearAt ?? 'undefined'})`;
+            case 'hiddenPlatform': return `new HiddenPlatform(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${formatJsLiteral(t.triggerArea ?? { x:t.x - 50, y:t.y - 80, w:200, h:100 })})`;
+            case 'triggerFloor': return `new TriggerFloor(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.triggerX ?? t.x})`;
+            case 'fallingCeiling':
+                return withAssignedProps(`new FallingCeiling(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.triggerX ?? t.x}, ${t.fake ?? false})`, {
+                    triggerMode: t.triggerMode && t.triggerMode !== 'x' ? t.triggerMode : undefined,
+                    triggerY: t.triggerMode === 'y' ? t.triggerY : undefined,
+                    triggerDist: t.triggerMode === 'proximity' ? t.triggerDist : undefined,
+                    triggerArea: t.triggerMode === 'area' ? t.triggerArea : undefined,
+                });
+            case 'shootingSpike':
+                return withAssignedProps(`new ShootingSpike(${t.x}, ${t.y}, ${JSON.stringify(t.dir ?? 'left')}, ${t.triggerX ?? t.x}, ${t.speed ?? 4}, null, null, ${t.disguised ?? false})`, {
+                    triggerMode: t.triggerMode && t.triggerMode !== 'x' ? t.triggerMode : undefined,
+                    triggerY: t.triggerMode === 'y' ? t.triggerY : undefined,
+                    triggerDist: t.triggerMode === 'proximity' ? t.triggerDist : undefined,
+                    triggerArea: t.triggerMode === 'area' ? t.triggerArea : undefined,
+                });
+            case 'movingSpike': return `new MovingSpike(${t.x1 ?? t.x}, ${t.y1 ?? t.y}, ${t.x2 ?? (t.x + 100)}, ${t.y2 ?? t.y}, ${t.speed ?? 0.01})`;
+            case 'risingDeath': return withAssignedProps(`new RisingDeath(${t.speed ?? 0.3}, ${t.startDelay ?? 120}, ${t.startY ?? (t.y + 12)})`, { x:t.x, y:t.y, w:t.w, h:t.h });
+            case 'chasingWall': return withAssignedProps(`new ChasingWall(${t.speed ?? 0.5}, ${t.startDelay ?? 90})`, { x:t.x, y:t.y, w:t.w, h:t.h });
+            case 'fakeExit': return `new FakeExit(${t.x}, ${t.y}, ${t.showAboveY ?? 'undefined'})`;
+            case 'fakeSpikes': return `new FakeSpikes(${formatJsLiteral(t.spikes ?? [])})`;
+            case 'killZone': return `new KillZone(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
+            case 'iceZone': return `new IceZone(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
+            case 'windZone': return `new WindZone(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.force ?? t.vx ?? 0}, ${t.forceY ?? t.vy ?? 0})`;
+            case 'invertTriggerLine': return `new InvertTriggerLine(${t.triggerX ?? (t.x + (t.w ?? 50) / 2)})`;
+            case 'invertZone': return withAssignedProps(`new InvertZone(${t.x}, ${t.y}, ${t.w}, ${t.h})`, { entryPadding: t.entryPadding !== undefined && t.entryPadding !== 24 ? t.entryPadding : undefined });
+            case 'darknessOverlay': return `new DarknessOverlay(${t.radius ?? 95})`;
+            case 'switch': return `new Switch(${t.x}, ${t.y}, ${JSON.stringify(t.group ?? 'A')})`;
+            case 'movingExit': return withAssignedProps(`new MovingExit(${formatJsLiteral(t.positions ?? [])})`, { triggerDist: t.triggerDist !== undefined && t.triggerDist !== 55 ? t.triggerDist : undefined });
+            default: return `/* Unsupported trap export: ${t.type} */ ${formatJsLiteral(t)}`;
+        }
+    }
+
+    function generateLevelFileContent(lvl) {
+        const data = JSON.parse(serializeLevel(lvl));
+        const trapLines = (data.traps || []).map(t => `        ${generateTrapCode(t)}`);
+        return `// Generated from Community Editor on ${new Date().toISOString().slice(0, 10)}\nLEVELS.push({\n    name: ${JSON.stringify(data.name || 'Test Level')},\n    player: ${formatJsLiteral(data.player, 4)},\n    exit: ${formatJsLiteral(data.exit, 4)},\n    platforms: ${formatJsLiteral(data.platforms || [], 4)},\n    spikes: ${formatJsLiteral(data.spikes || [], 4)},\n    traps: [\n${trapLines.join(',\n')}\n    ],\n});\n`;
+    }
+
+    function getLevelFileName(name) {
+        const slug = String(name || 'test-level').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
+        return `${slug || 'test-level'}.js`;
+    }
+
+    function showLevelFileExport() {
+        if (!ensureLevelValid('als Datei exportiert')) return;
+        document.getElementById('fileExportCode').value = generateLevelFileContent(currentLvl);
+        document.getElementById('fileExportOverlay').style.display = 'flex';
+    }
+
+    function copyLevelFileCode() {
+        navigator.clipboard.writeText(document.getElementById('fileExportCode').value);
+        showToast('JS level file copied!');
+    }
+
+    function downloadTextFile(filename, content, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadLevelFile() {
+        const filename = getLevelFileName(currentLvl.name);
+        downloadTextFile(filename, document.getElementById('fileExportCode').value, 'text/javascript;charset=utf-8');
+        showToast(`Downloaded ${filename}`);
+    }
+
     // ── SHARE / IMPORT ────────────────────────────────────
     function showShare() {
+        if (!ensureLevelValid('geteilt')) return;
         const json = serializeLevel(currentLvl);
         const code = btoa(unescape(encodeURIComponent(json)));
         document.getElementById('shareCode').value = code;
@@ -745,6 +1604,8 @@
             const json = decodeURIComponent(escape(atob(code)));
             currentLvl = deserializeLevel(json);
             selected = null;
+            refreshValidationMarkers();
+            resetHistory();
             updateProps(); updateElementList(); render();
             document.getElementById('info').textContent = currentLvl.name;
             document.getElementById('importOverlay').style.display = 'none';
@@ -780,10 +1641,12 @@
             cx.fillStyle = isSel?'#fff':'#d0d0d0'; cx.fillRect(p.x,p.y,p.w,p.h);
             cx.fillStyle = isSel?'#2ecc71':'#e8e8e8'; cx.fillRect(p.x,p.y,p.w,3);
             if (isSel) { cx.strokeStyle='#2ecc71'; cx.lineWidth=2; cx.strokeRect(p.x-1,p.y-1,p.w+2,p.h+2); }
+            if (validationIssueKeys.has(`platform:${i}`)) { cx.strokeStyle='#e74c3c'; cx.lineWidth=2; cx.strokeRect(p.x-2,p.y-2,p.w+4,p.h+4); }
         });
 
         // Traps
         lvl.traps.forEach((t,i) => {
+            syncTrapEditorGeometry(t);
             if (t.x === undefined) return;
             const isSel = selected&&selected.type==='trap'&&selected.index===i;
             let color = '#f1c40f';
@@ -793,8 +1656,104 @@
             else if (t.type==='iceZone') color='#3498db';
             else if (t.type==='dodgingPlatform') color='#1abc9c';
             else if (t.type==='shootingSpike') color='#e74c3c';
+            else if (t.type==='fakeSpikes') color='#e74c3c';
+            else if (t.type==='windZone') color='#87ceeb';
+            else if (t.type==='invertTriggerLine' || t.type==='invertZone') color='#f1c40f';
+            else if (t.type==='risingDeath' || t.type==='chasingWall') color='#c0392b';
 
-            if (t.type==='shootingSpike') {
+            if (t.type==='darknessOverlay') {
+                // Spezielles Icon — Darkness hat keine echte Position, ist global
+                const dx = t.x||400, dy = t.y||250;
+                cx.fillStyle='rgba(0,0,0,0.6)'; cx.fillRect(dx,dy,60,30);
+                cx.strokeStyle=isSel?'#2ecc71':'#555'; cx.lineWidth=isSel?2:1;
+                cx.strokeRect(dx,dy,60,30);
+                cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.textAlign='center';
+                cx.fillText('DARK',dx+30,dy+13);
+                cx.fillText('r:'+((t.radius||95)),dx+30,dy+25);
+                cx.textAlign='left';
+            } else if (t.type==='invertTriggerLine') {
+                cx.fillStyle='rgba(241,196,15,0.1)';
+                cx.fillRect(t.triggerX - 24, 0, 48, 500);
+                cx.fillStyle='rgba(241,196,15,0.85)';
+                cx.fillRect(t.triggerX - 1, 0, 2, 500);
+                cx.fillStyle='rgba(241,196,15,0.25)';
+                cx.fillRect(t.x, t.y, t.w, t.h);
+                cx.fillStyle='#111'; cx.font='bold 9px monospace'; cx.textAlign='center';
+                cx.fillText('FLIP', t.x + t.w/2, t.y + 18);
+                cx.textAlign='left';
+            } else if (t.type==='invertZone') {
+                cx.fillStyle='rgba(241,196,15,0.16)';
+                cx.fillRect(t.x, t.y, t.w, t.h);
+                const pad = Math.max(0, Math.min(t.entryPadding ?? 24, Math.max(0, t.w / 2 - 5)));
+                cx.fillStyle='rgba(241,196,15,0.3)';
+                cx.fillRect(t.x + pad, t.y, Math.max(10, t.w - pad * 2), t.h);
+                cx.strokeStyle='rgba(241,196,15,0.6)';
+                cx.setLineDash([6,4]);
+                cx.strokeRect(t.x + pad, t.y + 1, Math.max(10, t.w - pad * 2), Math.max(4, t.h - 2));
+                cx.setLineDash([]);
+                cx.fillStyle='#111'; cx.font='bold 9px monospace'; cx.textAlign='center';
+                cx.fillText('INVERT', t.x + t.w/2, t.y + 18);
+                cx.fillText('ZONE', t.x + t.w/2, t.y + 30);
+                cx.textAlign='left';
+            } else if (t.type==='fakeSpikes') {
+                cx.fillStyle='#e74c3c';
+                t.spikes.forEach(s => {
+                    const sw = s.w || 20;
+                    const sh = s.h || 20;
+                    cx.beginPath();
+                    if (s.dir==='up') { cx.moveTo(s.x,s.y+sh); cx.lineTo(s.x+sw/2,s.y); cx.lineTo(s.x+sw,s.y+sh); }
+                    else if (s.dir==='down') { cx.moveTo(s.x,s.y); cx.lineTo(s.x+sw/2,s.y+sh); cx.lineTo(s.x+sw,s.y); }
+                    else if (s.dir==='left') { cx.moveTo(s.x+sw,s.y); cx.lineTo(s.x,s.y+sh/2); cx.lineTo(s.x+sw,s.y+sh); }
+                    else { cx.moveTo(s.x,s.y); cx.lineTo(s.x+sw,s.y+sh/2); cx.lineTo(s.x,s.y+sh); }
+                    cx.closePath(); cx.fill();
+                });
+            } else if (t.type==='windZone') {
+                const fx = t.force ?? t.vx ?? 0;
+                const fy = t.forceY ?? t.vy ?? 0;
+                cx.fillStyle = fy < 0 ? 'rgba(160,240,160,0.18)' : (fy > 0 ? 'rgba(240,176,128,0.18)' : 'rgba(135,206,235,0.18)');
+                cx.fillRect(t.x, t.y, t.w, t.h);
+                const mag = Math.sqrt(fx * fx + fy * fy);
+                if (mag > 0) {
+                    const dx = fx / mag;
+                    const dy = fy / mag;
+                    cx.strokeStyle='rgba(255,255,255,0.45)';
+                    cx.lineWidth=1.2;
+                    const step = 26;
+                    const len = 12;
+                    for (let yy = t.y + 10; yy < t.y + t.h - 6; yy += step) {
+                        for (let xx = t.x + 10; xx < t.x + t.w - 6; xx += step) {
+                            cx.beginPath();
+                            cx.moveTo(xx, yy);
+                            cx.lineTo(xx + dx * len, yy + dy * len);
+                            cx.stroke();
+                        }
+                    }
+                }
+                cx.fillStyle='#fff';
+                cx.font='bold 9px monospace';
+                cx.fillText(`WX:${Math.round((fx || 0) * 100) / 100}`, t.x + 4, t.y + 14);
+                cx.fillText(`WY:${Math.round((fy || 0) * 100) / 100}`, t.x + 4, t.y + 26);
+            } else if (t.type==='risingDeath') {
+                cx.fillStyle='rgba(139,0,0,0.14)';
+                cx.fillRect(0, t.startY, 800, 500 - t.startY);
+                cx.fillStyle='#e74c3c';
+                cx.fillRect(0, t.startY - 1, 800, 2);
+                cx.fillStyle='rgba(192,57,43,0.3)';
+                cx.fillRect(t.x, t.y, t.w, t.h);
+                cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.textAlign='center';
+                cx.fillText('RISE', t.x + t.w/2, t.y + 16);
+                cx.textAlign='left';
+            } else if (t.type==='chasingWall') {
+                cx.fillStyle='rgba(139,0,0,0.12)';
+                cx.fillRect(0, 0, 28, 500);
+                cx.fillStyle='#e74c3c';
+                cx.fillRect(26, 0, 2, 500);
+                cx.fillStyle='rgba(192,57,43,0.3)';
+                cx.fillRect(t.x, t.y, t.w, t.h);
+                cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.textAlign='center';
+                cx.fillText('CHASE', t.x + t.w/2, t.y + 16);
+                cx.textAlign='left';
+            } else if (t.type==='shootingSpike') {
                 cx.fillStyle='#e74c3c'; cx.globalAlpha=0.8;
                 const d=t.dir, sDir=(d==='right'||d===1)?'right':(d==='up')?'up':(d==='down')?'down':'left';
                 cx.beginPath();
@@ -810,6 +1769,7 @@
             }
             cx.strokeStyle=isSel?'#2ecc71':color; cx.lineWidth=isSel?2:1;
             cx.setLineDash([4,3]); cx.strokeRect(t.x,t.y,t.w,t.h); cx.setLineDash([]);
+            if (validationIssueKeys.has(`trap:${i}`)) { cx.strokeStyle='#e74c3c'; cx.lineWidth=2; cx.strokeRect(t.x-2,t.y-2,t.w+4,t.h+4); }
             cx.fillStyle=color; cx.font='9px monospace'; cx.fillText(t.type||'trap',t.x+2,t.y-3);
         });
 
@@ -824,6 +1784,7 @@
             else { cx.moveTo(s.x,s.y); cx.lineTo(s.x+s.w,s.y+s.h/2); cx.lineTo(s.x,s.y+s.h); }
             cx.closePath(); cx.fill();
             if (isSel) { cx.strokeStyle='#2ecc71'; cx.lineWidth=2; cx.strokeRect(s.x-1,s.y-1,s.w+2,s.h+2); }
+            if (validationIssueKeys.has(`spike:${i}`)) { cx.strokeStyle='#e74c3c'; cx.lineWidth=2; cx.strokeRect(s.x-2,s.y-2,s.w+4,s.h+4); }
         });
 
         // Exit
@@ -832,13 +1793,27 @@
             cx.fillStyle='rgba(46,204,113,0.2)'; cx.fillRect(e.x-4,e.y-4,e.w+8,e.h+8);
             cx.fillStyle=isSel?'#2ecc71':'#27ae60'; cx.fillRect(e.x,e.y,e.w,e.h);
             cx.strokeStyle='#2ecc71'; cx.lineWidth=isSel?3:2; cx.strokeRect(e.x,e.y,e.w,e.h);
+            if (validationIssueKeys.has('exit:0')) { cx.strokeStyle='#e74c3c'; cx.lineWidth=2; cx.strokeRect(e.x-2,e.y-2,e.w+4,e.h+4); }
             cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.fillText('EXIT',e.x,e.y-4);
+            if (isSel && e.revealArea) {
+                cx.strokeStyle='rgba(46,204,113,0.7)';
+                cx.lineWidth=1.5;
+                cx.setLineDash([6,4]);
+                cx.strokeRect(e.revealArea.x, e.revealArea.y, e.revealArea.w, e.revealArea.h);
+                cx.setLineDash([]);
+                cx.fillStyle='rgba(46,204,113,0.08)';
+                cx.fillRect(e.revealArea.x, e.revealArea.y, e.revealArea.w, e.revealArea.h);
+                cx.fillStyle='#2ecc71';
+                cx.font='8px monospace';
+                cx.fillText('reveal area', e.revealArea.x + 4, e.revealArea.y - 4);
+            }
         }
 
         // Player
         const ps=lvl.player, isSel=selected&&selected.type==='player';
         cx.fillStyle=isSel?'#5dade2':'#3498db'; cx.fillRect(ps.x,ps.y,20,20);
         cx.strokeStyle=isSel?'#2ecc71':'#2980b9'; cx.lineWidth=isSel?3:2; cx.strokeRect(ps.x,ps.y,20,20);
+        if (validationIssueKeys.has('player:0')) { cx.strokeStyle='#e74c3c'; cx.lineWidth=2; cx.strokeRect(ps.x-2,ps.y-2,24,24); }
         cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.fillText('START',ps.x,ps.y-4);
 
         // MovingExit Waypoints
@@ -866,19 +1841,75 @@
         // Trigger-Visualisierung für ausgewähltes Element
         if (selected && selected.type === 'trap') {
             const t = selected.ref;
+            syncTrapEditorGeometry(t);
             const tcx = t.x+(t.w||30)/2, tcy = t.y+(t.h||20)/2;
             cx.strokeStyle='rgba(241,196,15,0.6)'; cx.lineWidth=1; cx.setLineDash([4,4]);
 
             // TriggerX Linie
-            if (t.triggerX !== undefined && t.type !== 'movingExit') {
+            if ((t.type === 'shootingSpike' || t.type === 'fallingCeiling') && (t.triggerMode || 'x') === 'x' && t.triggerX !== undefined) {
                 cx.beginPath(); cx.moveTo(t.triggerX,0); cx.lineTo(t.triggerX,500); cx.stroke();
                 cx.fillStyle='#f1c40f'; cx.font='9px monospace'; cx.fillText('trigX:'+Math.round(t.triggerX),t.triggerX+4,15);
+            } else if (t.triggerX !== undefined && t.type !== 'movingExit') {
+                cx.beginPath(); cx.moveTo(t.triggerX,0); cx.lineTo(t.triggerX,500); cx.stroke();
+                cx.fillStyle='#f1c40f'; cx.font='9px monospace'; cx.fillText('trigX:'+Math.round(t.triggerX),t.triggerX+4,15);
+            }
+
+            if ((t.type === 'shootingSpike' || t.type === 'fallingCeiling') && t.triggerMode === 'y' && t.triggerY !== undefined) {
+                cx.beginPath(); cx.moveTo(0,t.triggerY); cx.lineTo(800,t.triggerY); cx.stroke();
+                cx.fillStyle='#f1c40f'; cx.font='9px monospace'; cx.fillText('trigY:'+Math.round(t.triggerY),6,t.triggerY-6);
             }
 
             // TriggerDist Kreis (MovingExit, proximity)
             if (t.triggerDist !== undefined && t.type === 'movingExit') {
                 cx.beginPath(); cx.arc(tcx,tcy,t.triggerDist,0,Math.PI*2); cx.stroke();
                 cx.fillStyle='rgba(241,196,15,0.06)'; cx.beginPath(); cx.arc(tcx,tcy,t.triggerDist,0,Math.PI*2); cx.fill();
+            } else if ((t.type === 'shootingSpike' || t.type === 'fallingCeiling') && t.triggerMode === 'proximity' && t.triggerDist !== undefined) {
+                cx.beginPath(); cx.arc(tcx,tcy,t.triggerDist,0,Math.PI*2); cx.stroke();
+                cx.fillStyle='rgba(241,196,15,0.06)'; cx.beginPath(); cx.arc(tcx,tcy,t.triggerDist,0,Math.PI*2); cx.fill();
+            }
+
+            if ((t.type === 'shootingSpike' || t.type === 'fallingCeiling') && t.triggerMode === 'area' && t.triggerArea) {
+                const a = t.triggerArea;
+                cx.fillStyle='rgba(241,196,15,0.08)';
+                cx.fillRect(a.x, a.y, a.w, a.h);
+                cx.strokeRect(a.x, a.y, a.w, a.h);
+                cx.fillStyle='#f1c40f';
+                cx.font='8px monospace';
+                cx.fillText('trigger area', a.x + 3, a.y - 4);
+            }
+
+            if (t.type === 'shootingSpike' && document.getElementById('showShotPath')?.checked) {
+                const d = (t.dir === 'right' || t.dir === 1) ? 'right' : (t.dir === 'up') ? 'up' : (t.dir === 'down') ? 'down' : 'left';
+                cx.strokeStyle = 'rgba(231,76,60,0.65)';
+                cx.fillStyle = 'rgba(231,76,60,0.12)';
+                cx.lineWidth = 2;
+                if (d === 'right' || d === 'left') {
+                    const laneY = t.y;
+                    const laneH = t.h;
+                    const fromX = d === 'right' ? t.x + t.w : 0;
+                    const toX = d === 'right' ? 800 : t.x;
+                    cx.fillRect(fromX, laneY, toX - fromX, laneH);
+                    cx.beginPath();
+                    cx.moveTo(d === 'right' ? t.x + t.w : t.x, t.y + t.h / 2);
+                    cx.lineTo(d === 'right' ? 800 : 0, t.y + t.h / 2);
+                    cx.stroke();
+                    cx.fillStyle = '#e74c3c';
+                    cx.font = '8px monospace';
+                    cx.fillText('shot path', (d === 'right' ? t.x + t.w + 6 : 6), t.y + t.h / 2 - 4);
+                } else {
+                    const laneX = t.x;
+                    const laneW = t.w;
+                    const fromY = d === 'down' ? t.y + t.h : 0;
+                    const toY = d === 'down' ? 500 : t.y;
+                    cx.fillRect(laneX, fromY, laneW, toY - fromY);
+                    cx.beginPath();
+                    cx.moveTo(t.x + t.w / 2, d === 'down' ? t.y + t.h : t.y);
+                    cx.lineTo(t.x + t.w / 2, d === 'down' ? 500 : 0);
+                    cx.stroke();
+                    cx.fillStyle = '#e74c3c';
+                    cx.font = '8px monospace';
+                    cx.fillText('shot path', t.x + t.w / 2 + 6, d === 'down' ? t.y + t.h + 12 : Math.max(10, t.y - 6));
+                }
             }
 
             // DodgingPlatform: Trigger-Zone + Dodge-Ziel
@@ -903,6 +1934,12 @@
                 cx.strokeStyle='rgba(26,188,156,0.4)'; cx.strokeRect(t.targetX,t.targetY||t.y,t.w,t.h);
             }
 
+            if (t.type === 'risingDeath' && t.startY !== undefined) {
+                cx.strokeStyle='rgba(231,76,60,0.8)';
+                cx.beginPath(); cx.moveTo(0, t.startY); cx.lineTo(800, t.startY); cx.stroke();
+                cx.fillStyle='#e74c3c'; cx.font='9px monospace'; cx.fillText('startY:'+Math.round(t.startY), 6, t.startY - 6);
+            }
+
             // MovingSpike: Linie zwischen Start und End
             if (t.type === 'movingSpike') {
                 cx.strokeStyle='rgba(231,76,60,0.5)'; cx.lineWidth=2;
@@ -911,6 +1948,26 @@
             }
 
             cx.setLineDash([]);
+        }
+
+        if (selected) {
+            if (canResizeSelectedElement()) {
+                const handle = getHandleRect(selected.ref);
+                cx.fillStyle = '#2ecc71';
+                cx.fillRect(handle.x, handle.y, handle.w, handle.h);
+                cx.strokeStyle = '#ffffff';
+                cx.lineWidth = 1;
+                cx.strokeRect(handle.x, handle.y, handle.w, handle.h);
+            }
+            const area = getSelectedAreaRect();
+            if (area) {
+                const areaHandle = getHandleRect(area);
+                cx.fillStyle = '#f1c40f';
+                cx.fillRect(areaHandle.x, areaHandle.y, areaHandle.w, areaHandle.h);
+                cx.strokeStyle = '#111';
+                cx.lineWidth = 1;
+                cx.strokeRect(areaHandle.x, areaHandle.y, areaHandle.w, areaHandle.h);
+            }
         }
 
         // Jump arc
@@ -934,8 +1991,10 @@
 
     // ── TEST MODE ─────────────────────────────────────────
     function testLevel() {
+        if (!ensureLevelValid('getestet')) return;
         const lvl = currentLvl;
         game.levelData = lvl; game.cameraX = 0; game.cameraY = 0;
+        lvl.invertControls = false;
         preTestState = lvl.traps.map(t => { const s={}; for(const k in t) if(typeof t[k]!=='function') s[k]=t[k]; return s; });
         edCanvas.width=800; edCanvas.height=500;
         const maxW=window.innerWidth*0.9, maxH=window.innerHeight*0.9, ratio=800/500;
@@ -960,6 +2019,7 @@
         document.getElementById('testOverlay').style.display='none';
         if(testAnimId)cancelAnimationFrame(testAnimId);
         game.onPlayerDeath=null;
+        currentLvl.invertControls = false;
         if(preTestState){const traps=currentLvl.traps;preTestState.forEach((s,i)=>{if(traps[i])for(const k in s)traps[i][k]=s[k];});preTestState=null;}
         document.getElementById('canvasWrap').appendChild(edCanvas);
         edCanvas.style.cssText=''; render();
@@ -978,18 +2038,18 @@
         const lvl=currentLvl; game.levelData=lvl;
         if(keys['Escape']){keys['Escape']=false;stopTest();return;}
         if(keys['KeyR']&&testState==='playing'){testPlayer.die();return;}
-        if(testState==='dead'){testRespawn--;if(testRespawn<=0){testPlayer.reset();lvl.traps.forEach(t=>t.reset());testState='playing';}return;}
+        if(testState==='dead'){testRespawn--;if(testRespawn<=0){lvl.invertControls=false;testPlayer.reset();lvl.traps.forEach(t=>t.reset());testState='playing';}return;}
         const plats=[...lvl.platforms];
-        ['fallingFloor','trollShaker','dodgingPlatform','togglePlatform','movingPlatform'].forEach(type=>{lvl.traps.forEach(t=>{if(t.solid&&t.type===type)plats.push(t);});});
+        ['fallingFloor','disappearing','hiddenPlatform','trollShaker','triggerFloor','dodgingPlatform','timedFloor','togglePlatform','movingPlatform'].forEach(type=>{lvl.traps.forEach(t=>{if(t.solid&&t.type===type)plats.push(t);});});
         testPlayer.update(plats);
         lvl.traps.forEach(t=>t.update(testPlayer));
         for(const s of lvl.spikes){if(testPlayer.alive){const h={x:s.x+3,y:s.y+3,w:s.w-6,h:s.h-6};if(aabb(testPlayer,h))testPlayer.die();}}
         if(testPlayer.alive){
             const exits=[];
-            if(lvl.exit)exits.push(lvl.exit);
+            if(lvl.exit && isExitVisibleForPlayer(lvl.exit, testPlayer)) exits.push(lvl.exit);
             const me=lvl.traps.find(t=>t.type==='movingExit');
             if(me&&!me.moving&&me.getBounds)exits.push(me.getBounds());
-            for(const eb of exits){if(aabb(testPlayer,eb)){document.getElementById('testInfo').textContent=`LEVEL COMPLETE! Deaths: ${testDeaths} | R = Restart | ESC = Editor`;testPlayer.reset();lvl.traps.forEach(t=>t.reset());testState='playing';break;}}
+            for(const eb of exits){if(aabb(testPlayer,eb)){document.getElementById('testInfo').textContent=`LEVEL COMPLETE! Deaths: ${testDeaths} | R = Restart | ESC = Editor`;lvl.invertControls=false;testPlayer.reset();lvl.traps.forEach(t=>t.reset());testState='playing';break;}}
         }
         document.getElementById('testInfo').textContent=`TEST — "${lvl.name}" | Deaths: ${testDeaths} | R = Restart | ESC = Back`;
     }
@@ -1002,14 +2062,16 @@
         lvl.platforms.forEach(p=>drawPlatform(p));
         lvl.traps.forEach(t=>{if(t.type!=='darknessOverlay')t.draw();});
         lvl.spikes.forEach(s=>drawSpike(s));
-        if(lvl.exit)drawExit(lvl.exit);
+        if(lvl.exit && isExitVisibleForPlayer(lvl.exit, testPlayer)) drawExit(lvl.exit);
         testPlayer.draw();
         updateParticles();
+        lvl.traps.forEach(t=>{if(t.type==='darknessOverlay')t.draw();});
         ctx.restore(); ctx.restore();
     }
 
     // ── INIT ──────────────────────────────────────────────
-    updateSlots(); updateElementList(); render();
+    refreshValidationMarkers();
+    updateSlots(); updateElementList(); render(); resetHistory();
     </script>
 </body>
 </html>
