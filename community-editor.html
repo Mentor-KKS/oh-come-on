@@ -55,8 +55,8 @@
         #testOverlay .bar .back { color:#e74c3c; border:1px solid #e74c3c; cursor:pointer; }
 
         #shareOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; }
-        #shareBox { background:#1a1a2e; border:2px solid #2ecc71; border-radius:8px; padding:24px; width:500px; max-width:90%; }
-        #shareBox h3 { color:#2ecc71; margin-bottom:12px; }
+        .overlayBox { background:#1a1a2e; border:2px solid #2ecc71; border-radius:8px; padding:24px; width:500px; max-width:90%; }
+        .overlayBox h3 { color:#2ecc71; margin-bottom:12px; }
     </style>
 </head>
 <body>
@@ -190,7 +190,7 @@
 
     <!-- Share Overlay -->
     <div id="shareOverlay" onclick="if(event.target===this)this.style.display='none'">
-        <div id="shareBox">
+        <div class="overlayBox">
             <h3>Share Level</h3>
             <p style="color:#888;font-size:12px;margin-bottom:10px;">Copy this code and share it!</p>
             <textarea id="shareCode" rows="6" readonly onclick="this.select()"></textarea>
@@ -199,7 +199,7 @@
     </div>
 
     <div id="fileExportOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
-        <div id="shareBox" style="background:#1a1a2e;border:2px solid #f39c12;border-radius:8px;padding:24px;width:680px;max-width:92%;">
+        <div class="overlayBox" style="background:#1a1a2e;border:2px solid #f39c12;border-radius:8px;padding:24px;width:680px;max-width:92%;">
             <h3 style="color:#f39c12;">Export JS Level File</h3>
             <p style="color:#888;font-size:12px;margin-bottom:10px;">This creates a standalone <code>.js</code> level file you can keep as a test level or later turn into a normal game level.</p>
             <textarea id="fileExportCode" rows="16" readonly onclick="this.select()"></textarea>
@@ -210,7 +210,7 @@
 
     <!-- Import Overlay -->
     <div id="importOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
-        <div id="shareBox" style="background:#1a1a2e;border:2px solid #3498db;border-radius:8px;padding:24px;width:500px;max-width:90%;">
+        <div class="overlayBox" style="background:#1a1a2e;border:2px solid #3498db;border-radius:8px;padding:24px;width:500px;max-width:90%;">
             <h3 style="color:#3498db;">Import Level</h3>
             <p style="color:#888;font-size:12px;margin-bottom:10px;">Paste a level code:</p>
             <textarea id="importCode" rows="6" placeholder="Paste level code here..."></textarea>
