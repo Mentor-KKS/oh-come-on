@@ -10,7 +10,100 @@ function getPhaseCount() { return Math.ceil(LEVELS.length / PHASE_SIZE); }
 function getPhaseStart(phase) { return phase * PHASE_SIZE; }
 function getPhaseEnd(phase) { return Math.min((phase + 1) * PHASE_SIZE, LEVELS.length); }
 
+function clonePlain(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function deserializeCommunityTrap(td) {
+    const t = td.type === 'invertZone' && td.triggerX !== undefined ? { ...td, type: 'invertTriggerLine' } : td;
+    switch (t.type) {
+        case 'fallingFloor': return new FallingFloor(t.x, t.y, t.w, t.h);
+        case 'fakeFloor': return new FakeFloor(t.x, t.y, t.w, t.h);
+        case 'dodgingPlatform': return new DodgingPlatform(t.x, t.y, t.w, t.h, t.dodgeX ?? (t.x + 100), t.triggerRange ?? 80);
+        case 'trollShaker': return new TrollShaker(t.x, t.y, t.w, t.h);
+        case 'timedFloor': return new TimedFloor(t.x, t.y, t.w, t.h, t.delay ?? 120);
+        case 'togglePlatform': return new TogglePlatform(t.x, t.y, t.w, t.h, t.group ?? 'A', t.initialActive ?? t.active ?? false);
+        case 'movingPlatform': return new MovingPlatform(t.x, t.y, t.w, t.h, t.targetX ?? (t.x + 100), t.targetY ?? t.y, t.speed ?? 0.5, t.disappearAt);
+        case 'hiddenPlatform': return new HiddenPlatform(t.x, t.y, t.w, t.h, clonePlain(t.triggerArea ?? { x:t.x - 50, y:t.y - 80, w:200, h:100 }));
+        case 'triggerFloor': return new TriggerFloor(t.x, t.y, t.w, t.h, t.triggerX ?? t.x);
+        case 'fallingCeiling': {
+            const trap = new FallingCeiling(t.x, t.y, t.w, t.h, t.triggerX ?? t.x, t.fake ?? false);
+            if (t.triggerMode) trap.triggerMode = t.triggerMode;
+            if (t.triggerY !== undefined) trap.triggerY = t.triggerY;
+            if (t.triggerDist !== undefined) trap.triggerDist = t.triggerDist;
+            if (t.triggerArea) trap.triggerArea = clonePlain(t.triggerArea);
+            return trap;
+        }
+        case 'shootingSpike':
+        case 'shootingSpikeDisguised': {
+            const trap = new ShootingSpike(t.x, t.y, t.dir ?? 'left', t.triggerX ?? t.x, t.speed ?? 4, null, null, t.disguised ?? false);
+            if (t.triggerMode) trap.triggerMode = t.triggerMode;
+            if (t.triggerY !== undefined) trap.triggerY = t.triggerY;
+            if (t.triggerDist !== undefined) trap.triggerDist = t.triggerDist;
+            if (t.triggerArea) trap.triggerArea = clonePlain(t.triggerArea);
+            return trap;
+        }
+        case 'movingSpike': return new MovingSpike(t.x1 ?? t.x, t.y1 ?? t.y, t.x2 ?? (t.x + 100), t.y2 ?? t.y, t.speed ?? 0.01);
+        case 'risingDeath': {
+            const trap = new RisingDeath(t.speed ?? 0.3, t.startDelay ?? 120, t.startY ?? (t.y + 12));
+            if (t.x !== undefined) trap.x = t.x;
+            if (t.y !== undefined) trap.y = t.y;
+            if (t.w !== undefined) trap.w = t.w;
+            if (t.h !== undefined) trap.h = t.h;
+            return trap;
+        }
+        case 'chasingWall': {
+            const trap = new ChasingWall(t.speed ?? 0.5, t.startDelay ?? 90);
+            if (t.x !== undefined) trap.x = t.x;
+            if (t.y !== undefined) trap.y = t.y;
+            if (t.w !== undefined) trap.w = t.w;
+            if (t.h !== undefined) trap.h = t.h;
+            return trap;
+        }
+        case 'fakeExit': return new FakeExit(t.x, t.y, t.showAboveY);
+        case 'fakeSpikes': return new FakeSpikes(clonePlain(t.spikes ?? []));
+        case 'killZone': return new KillZone(t.x, t.y, t.w ?? 50, t.h ?? 50);
+        case 'iceZone': return new IceZone(t.x, t.y, t.w ?? 150, t.h ?? 50);
+        case 'windZone': return new WindZone(t.x, t.y, t.w ?? 100, t.h ?? 100, t.force ?? t.vx ?? 0, t.forceY ?? t.vy ?? 0);
+        case 'invertTriggerLine': return new InvertTriggerLine(t.triggerX ?? (t.x + (t.w ?? 50) / 2));
+        case 'invertZone': {
+            const trap = new InvertZone(t.x, t.y, t.w ?? 140, t.h ?? 90);
+            if (t.entryPadding !== undefined) trap.entryPadding = t.entryPadding;
+            return trap;
+        }
+        case 'darknessOverlay': return new DarknessOverlay(t.radius ?? 95);
+        case 'switch': return new Switch(t.x, t.y, t.group ?? 'A');
+        case 'movingExit': {
+            const trap = new MovingExit(clonePlain(t.positions ?? [{ x:t.x ?? 0, y:t.y ?? 0 }]));
+            if (t.triggerDist !== undefined) trap.triggerDist = t.triggerDist;
+            return trap;
+        }
+        default: return { ...clonePlain(t), update(){}, draw(){}, reset(){} };
+    }
+}
+
+function deserializeCommunityLevelFromCode(code) {
+    const json = decodeURIComponent(escape(atob(code.trim())));
+    const data = JSON.parse(json);
+    return {
+        name: data.name || 'Shared Level',
+        player: clonePlain(data.player),
+        exit: data.exit ? clonePlain(data.exit) : null,
+        platforms: clonePlain(data.platforms || []),
+        spikes: clonePlain(data.spikes || []),
+        traps: (data.traps || []).map(deserializeCommunityTrap),
+    };
+}
+
 // ── GAME OBJECT ────────────────────��────────────────────���───
+function getSharedLevelOverlayElements() {
+    return {
+        overlay: document.getElementById('sharedLevelOverlay'),
+        input: document.getElementById('sharedLevelCodeInput'),
+        error: document.getElementById('sharedLevelOverlayError'),
+    };
+}
+
 const game = {
     state: 'menu',
     currentLevel: 0,
@@ -38,12 +131,19 @@ const game = {
     speedrunPenalty: 0,
     speedrunFinalTime: 0,
     speedrunBestTimes: {},
+    sharedLevelMode: false,
+    sharedLevelCode: '',
+    sharedLevelOverlayOpen: false,
 
     init() {
         this.state = 'menu';
         this.deaths = 0;
         this.totalDeaths = 0;
         this.currentLevel = 0;
+        this.sharedLevelMode = false;
+        this.sharedLevelCode = '';
+        this.sharedLevelOverlayOpen = false;
+        this.closeSharedLevelOverlay(false);
         // Fortschritt laden
         this.highestUnlocked = parseInt(localStorage.getItem('ohcomeon_progress') || '0');
         // Speedrun-Bestzeiten laden (neues Format)
@@ -93,10 +193,134 @@ const game = {
     },
 
     saveProgress() {
+        if (this.sharedLevelMode) return;
         if (this.currentLevel >= this.highestUnlocked) {
             this.highestUnlocked = this.currentLevel + 1;
             localStorage.setItem('ohcomeon_progress', this.highestUnlocked);
         }
+    },
+
+    setSharedLevelOverlayOpen(open) {
+        const { overlay, input, error } = getSharedLevelOverlayElements();
+        this.sharedLevelOverlayOpen = open;
+        if (!overlay || !input || !error) return;
+
+        overlay.classList.toggle('open', open);
+        error.textContent = '';
+
+        if (open) {
+            Object.keys(keys).forEach(k => { keys[k] = false; });
+            setTimeout(() => {
+                input.focus();
+                if (input.value.trim()) input.select();
+            }, 0);
+        } else {
+            input.blur();
+        }
+    },
+
+    closeSharedLevelOverlay(clearInput = false) {
+        const { input, error } = getSharedLevelOverlayElements();
+        this.setSharedLevelOverlayOpen(false);
+        if (clearInput && input) input.value = '';
+        if (error) error.textContent = '';
+    },
+
+    async pasteSharedLevelCode() {
+        const { input, error } = getSharedLevelOverlayElements();
+        if (!input) return;
+
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.readText) {
+                throw new Error('Clipboard API unavailable');
+            }
+            const text = await navigator.clipboard.readText();
+            if (!text.trim()) throw new Error('Clipboard empty');
+            input.value = text.trim();
+            if (error) error.textContent = '';
+            input.focus();
+        } catch (err) {
+            if (error) error.textContent = 'Clipboard paste is not available here. Please paste manually.';
+        }
+    },
+
+    loadSharedLevelFromOverlay() {
+        const { input, error } = getSharedLevelOverlayElements();
+        if (!input) return;
+
+        const code = input.value.trim();
+        if (!code) {
+            if (error) error.textContent = 'Please paste a shared level code first.';
+            input.focus();
+            return;
+        }
+
+        try {
+            const levelData = deserializeCommunityLevelFromCode(code.replace(/\s+/g, ''));
+            this.closeSharedLevelOverlay(false);
+            this.startSharedLevel(levelData, code);
+            SFX.menuSelect();
+        } catch (err) {
+            console.error('Invalid shared level code:', err);
+            if (error) error.textContent = 'This shared level code is invalid or incomplete.';
+            input.focus();
+            input.select();
+        }
+    },
+
+    startSharedLevel(levelData, sourceCode = '') {
+        const lvl = {
+            name: levelData.name || 'Shared Level',
+            player: clonePlain(levelData.player || { x: 60, y: 360 }),
+            exit: levelData.exit ? clonePlain(levelData.exit) : null,
+            platforms: clonePlain(levelData.platforms || []),
+            spikes: clonePlain(levelData.spikes || []),
+            traps: levelData.traps || [],
+            width: levelData.width,
+            height: levelData.height,
+            cameraMinX: levelData.cameraMinX,
+            verticalScroll: !!levelData.verticalScroll,
+            autoScroll: levelData.autoScroll ? clonePlain(levelData.autoScroll) : null,
+            shadowExit: levelData.shadowExit ? clonePlain(levelData.shadowExit) : null,
+        };
+
+        this.currentLevel = -1;
+        this.levelData = lvl;
+        this.player = new Player(lvl.player.x, lvl.player.y);
+        this.deaths = 0;
+        this.titleTimer = CFG.levelTitleTime;
+        this.state = 'playing';
+        this.sharedLevelMode = true;
+        this.sharedLevelCode = sourceCode;
+        this.speedrunMode = false;
+        this.speedrunStartTime = 0;
+        this.speedrunPending = false;
+        this.speedrunPenalty = 0;
+        this.speedrunFinalTime = 0;
+        this.closeSharedLevelOverlay(false);
+        if (!SFX.bgPlaying) SFX.startMusic();
+
+        const lvlW = lvl.width || W;
+        let zoom = 1;
+        if (lvl.width && lvl.height && !lvl.verticalScroll && !lvl.autoScroll) {
+            zoom = Math.min(W / lvl.width, H / lvl.height);
+        }
+        const visibleW = W / zoom;
+        const camMin = lvl.cameraMinX || 0;
+        this.cameraX = Math.max(camMin, Math.min(this.player.x - visibleW / 2, lvlW - visibleW));
+
+        if (lvl.verticalScroll) {
+            const lvlH = lvl.height || H;
+            this.cameraY = Math.max(0, Math.min(this.player.y - H / 2, lvlH - H));
+        } else {
+            this.cameraY = 0;
+        }
+
+        lvl.traps.forEach(t => t.reset());
+    },
+
+    promptAndStartSharedLevel() {
+        this.setSharedLevelOverlayOpen(true);
     },
 
     startLevel(idx) {
@@ -107,6 +331,9 @@ const game = {
         this.deaths = 0;
         this.titleTimer = CFG.levelTitleTime;
         this.state = 'playing';
+        this.sharedLevelMode = false;
+        this.sharedLevelCode = '';
+        this.closeSharedLevelOverlay(false);
         if (!SFX.bgPlaying) SFX.startMusic();
         // Camera direkt auf Spieler setzen (cameraMinX = versteckt Bereich links)
         const lvlW = lvl.width || W;
@@ -199,6 +426,14 @@ const game = {
             SFX.setMuted(!SFX.muted);
         }
 
+        if (this.sharedLevelOverlayOpen) {
+            if (keys['Escape']) {
+                keys['Escape'] = false;
+                this.closeSharedLevelOverlay(false);
+            }
+            return;
+        }
+
         // L = Level Select (nur im normalen Modus, nicht im Speedrun!)
         if (keys['KeyL'] && this.state !== 'levelSelect' && !this.speedrunMode) {
             keys['KeyL'] = false;
@@ -217,6 +452,9 @@ const game = {
             this.speedrunPenalty = 0;
             this.totalDeaths = 0;
             this.deaths = 0;
+            this.sharedLevelMode = false;
+            this.sharedLevelCode = '';
+            this.closeSharedLevelOverlay(false);
             return;
         }
 
@@ -248,6 +486,11 @@ const game = {
             if (keys['KeyE']) {
                 keys['KeyE'] = false;
                 window.open('community-editor.html', '_blank');
+                return;
+            }
+            if (keys['KeyP']) {
+                keys['KeyP'] = false;
+                this.promptAndStartSharedLevel();
                 return;
             }
             // S = Speedrun Cycle: OFF → Phase 1 → Phase 2 → ... → Hardcore → OFF
@@ -328,6 +571,9 @@ const game = {
             if (keys['Escape']) {
                 keys['Escape'] = false;
                 this.state = 'menu';
+                this.sharedLevelMode = false;
+                this.sharedLevelCode = '';
+                this.closeSharedLevelOverlay(false);
             }
             return;
         }
@@ -343,8 +589,8 @@ const game = {
         if (this.state === 'levelComplete') {
             this.levelCompleteTimer--;
             if (this.levelCompleteTimer <= 0) {
-                this.saveProgress();
-                const isLastLevel = this.currentLevel + 1 >= LEVELS.length;
+                if (!this.sharedLevelMode) this.saveProgress();
+                const isLastLevel = this.sharedLevelMode || this.currentLevel + 1 >= LEVELS.length;
                 const isSpeedrunEnd = this.speedrunMode && this.currentLevel >= this.getSpeedrunEndLevel();
                 if (isLastLevel || isSpeedrunEnd) {
                     this.state = 'win';
@@ -575,6 +821,20 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
+window.loadSharedLevelFromOverlay = () => game.loadSharedLevelFromOverlay();
+window.closeSharedLevelOverlay = () => game.closeSharedLevelOverlay(false);
+window.pasteSharedLevelCode = () => game.pasteSharedLevelCode();
+window.handleSharedLevelOverlayKeydown = (event) => {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        game.closeSharedLevelOverlay(false);
+        return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        game.loadSharedLevelFromOverlay();
+    }
+};
 
 // ── START ───────────────────────────────────────────────────
 game.init();

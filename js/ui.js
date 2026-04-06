@@ -54,6 +54,7 @@ function drawMenu(frameCount, highestUnlocked) {
     const menuItems = [
         { key: 'S', label: 'Speedrun', active: game.speedrunMode },
         { key: 'L', label: 'Level Select' },
+        { key: 'P', label: 'Play Shared Level' },
         { key: 'E', label: 'Level Editor' },
         { key: 'O', label: 'Options' },
         { key: 'M', label: 'Sound ' + (SFX.muted ? 'OFF' : 'ON') },
@@ -182,7 +183,7 @@ function drawLevelSelect(selected, highestUnlocked, frameCount) {
 function drawHUD(currentLevel, totalLevels, totalDeaths) {
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '14px "Courier New", monospace';
-    ctx.fillText(`Level ${currentLevel + 1} / ${totalLevels}`, 20, 25);
+    ctx.fillText(game.sharedLevelMode ? `Shared Level` : `Level ${currentLevel + 1} / ${totalLevels}`, 20, 25);
 
     ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
     ctx.fillText(`Deaths: ${totalDeaths}`, W - 130, 25);
@@ -195,7 +196,7 @@ function drawHUD(currentLevel, totalLevels, totalDeaths) {
     } else {
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
         ctx.font = '11px "Courier New", monospace';
-        ctx.fillText('[L] Level Select', W / 2 - 45, 25);
+        ctx.fillText(game.sharedLevelMode ? '[ESC] Menu' : '[L] Level Select', W / 2 - 45, 25);
     }
 }
 
@@ -205,7 +206,7 @@ function drawLevelTitle(currentLevel, name, titleTimer) {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 28px "Courier New", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`Level ${currentLevel + 1}`, W / 2, H / 2 - 20);
+    ctx.fillText(game.sharedLevelMode ? 'Shared Level' : `Level ${currentLevel + 1}`, W / 2, H / 2 - 20);
     ctx.font = '18px "Courier New", monospace';
     ctx.fillStyle = '#aaa';
     ctx.fillText(name, W / 2, H / 2 + 15);
@@ -218,7 +219,7 @@ function drawLevelComplete() {
     ctx.fillStyle = '#2ecc71';
     ctx.font = 'bold 32px "Courier New", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('Level Complete!', W / 2, H / 2);
+    ctx.fillText(game.sharedLevelMode ? 'Shared Level Complete!' : 'Level Complete!', W / 2, H / 2);
     ctx.textAlign = 'left';
 }
 
@@ -276,7 +277,7 @@ function drawWinScreen(totalDeaths, winTimer, frameCount) {
         if (blink) {
             ctx.fillStyle = '#555';
             ctx.font = '14px "Courier New", monospace';
-            ctx.fillText('Press ENTER to play again', W / 2, 430);
+            ctx.fillText(game.sharedLevelMode ? 'Press ENTER to return to menu' : 'Press ENTER to play again', W / 2, 430);
         }
     }
     ctx.textAlign = 'left';
