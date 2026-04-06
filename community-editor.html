@@ -841,6 +841,78 @@
         cx.strokeStyle=isSel?'#2ecc71':'#2980b9'; cx.lineWidth=isSel?3:2; cx.strokeRect(ps.x,ps.y,20,20);
         cx.fillStyle='#fff'; cx.font='bold 9px monospace'; cx.fillText('START',ps.x,ps.y-4);
 
+        // MovingExit Waypoints
+        lvl.traps.forEach((t,i) => {
+            if (t.type === 'movingExit' && t.positions) {
+                const isSel = selected&&selected.type==='trap'&&selected.index===i;
+                const pts = t.positions;
+                cx.strokeStyle = isSel?'#2ecc71':'rgba(46,204,113,0.4)';
+                cx.lineWidth = isSel?2:1; cx.setLineDash([6,4]);
+                cx.beginPath(); cx.moveTo(pts[0].x+15, pts[0].y+20);
+                for (let p=1;p<pts.length;p++) cx.lineTo(pts[p].x+15, pts[p].y+20);
+                cx.stroke(); cx.setLineDash([]);
+                pts.forEach((p,pi) => {
+                    const isLast = pi===pts.length-1;
+                    cx.beginPath(); cx.arc(p.x+15,p.y+20,isLast?8:6,0,Math.PI*2);
+                    cx.fillStyle = isLast?'#2ecc71':'rgba(46,204,113,0.6)'; cx.fill();
+                    cx.strokeStyle='#fff'; cx.lineWidth=1; cx.stroke();
+                    cx.fillStyle='#fff'; cx.font='bold 8px monospace'; cx.textAlign='center';
+                    cx.fillText(isLast?'STOP':(pi+1), p.x+15, p.y+23); cx.textAlign='left';
+                    if (isSel) { cx.fillStyle='rgba(255,255,255,0.5)'; cx.font='8px monospace'; cx.fillText('('+Math.round(p.x)+','+Math.round(p.y)+')',p.x+25,p.y+15); }
+                });
+            }
+        });
+
+        // Trigger-Visualisierung für ausgewähltes Element
+        if (selected && selected.type === 'trap') {
+            const t = selected.ref;
+            const tcx = t.x+(t.w||30)/2, tcy = t.y+(t.h||20)/2;
+            cx.strokeStyle='rgba(241,196,15,0.6)'; cx.lineWidth=1; cx.setLineDash([4,4]);
+
+            // TriggerX Linie
+            if (t.triggerX !== undefined && t.type !== 'movingExit') {
+                cx.beginPath(); cx.moveTo(t.triggerX,0); cx.lineTo(t.triggerX,500); cx.stroke();
+                cx.fillStyle='#f1c40f'; cx.font='9px monospace'; cx.fillText('trigX:'+Math.round(t.triggerX),t.triggerX+4,15);
+            }
+
+            // TriggerDist Kreis (MovingExit, proximity)
+            if (t.triggerDist !== undefined && t.type === 'movingExit') {
+                cx.beginPath(); cx.arc(tcx,tcy,t.triggerDist,0,Math.PI*2); cx.stroke();
+                cx.fillStyle='rgba(241,196,15,0.06)'; cx.beginPath(); cx.arc(tcx,tcy,t.triggerDist,0,Math.PI*2); cx.fill();
+            }
+
+            // DodgingPlatform: Trigger-Zone + Dodge-Ziel
+            if (t.type === 'dodgingPlatform') {
+                if (t.triggerRange) {
+                    cx.fillStyle='rgba(241,196,15,0.1)'; cx.fillRect(tcx-t.triggerRange,t.y-80,t.triggerRange*2,80);
+                    cx.strokeRect(tcx-t.triggerRange,t.y-80,t.triggerRange*2,80);
+                    cx.fillStyle='#f1c40f'; cx.font='8px monospace'; cx.fillText('trigger (in air)',tcx-t.triggerRange+2,t.y-68);
+                }
+                if (t.dodgeX !== undefined) {
+                    cx.strokeStyle='rgba(231,76,60,0.6)'; cx.lineWidth=2;
+                    cx.beginPath(); cx.moveTo(tcx,t.y+t.h/2); cx.lineTo(t.dodgeX+t.w/2,t.y+t.h/2); cx.stroke();
+                    cx.strokeStyle='rgba(231,76,60,0.3)'; cx.strokeRect(t.dodgeX,t.y,t.w,t.h);
+                    cx.fillStyle='#e74c3c'; cx.font='8px monospace'; cx.fillText('dodge to',t.dodgeX+2,t.y-3);
+                }
+            }
+
+            // MovingPlatform: Linie zum Ziel
+            if (t.type === 'movingPlatform' && t.targetX !== undefined) {
+                cx.strokeStyle='rgba(26,188,156,0.5)'; cx.lineWidth=2;
+                cx.beginPath(); cx.moveTo(tcx,t.y+t.h/2); cx.lineTo(t.targetX+t.w/2,(t.targetY||t.y)+t.h/2); cx.stroke();
+                cx.strokeStyle='rgba(26,188,156,0.4)'; cx.strokeRect(t.targetX,t.targetY||t.y,t.w,t.h);
+            }
+
+            // MovingSpike: Linie zwischen Start und End
+            if (t.type === 'movingSpike') {
+                cx.strokeStyle='rgba(231,76,60,0.5)'; cx.lineWidth=2;
+                cx.beginPath(); cx.moveTo(t.x1+t.w/2,t.y1+t.h/2); cx.lineTo(t.x2+t.w/2,t.y2+t.h/2); cx.stroke();
+                cx.strokeStyle='rgba(231,76,60,0.3)'; cx.strokeRect(t.x2,t.y2,t.w,t.h);
+            }
+
+            cx.setLineDash([]);
+        }
+
         // Jump arc
         if (document.getElementById('showArc').checked) {
             drawJumpArc(ps.x+10, ps.y);
