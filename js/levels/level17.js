@@ -1,55 +1,117 @@
-// Level 17 — "Trap Door"
-// KONZEPT: Das Loch im Boden IST der echte Weg. 16 Level lang gelernt: Loch = Tod.
-// TROLL: Oben ist ein FakeExit der dich killt. Der "Todespit" führt zum echten Exit.
+// Level 17 — "Alone in the Dark"
 
 LEVELS.push({
-    name: 'Trap Door',
-    height: 700,
+    name: "Alone in the Dark",
+    levelType: "normal",
+    backgroundTheme: "plainSlate",
     width: 800,
-    player: { x: 50, y: 200 },
-    exit: { x: 370, y: 620, w: 30, h: 40 },
+    height: 500,
+    player: {
+        x: 50,
+        y: 440
+    },
+    exit: {
+        x: 745,
+        y: 340,
+        w: 30,
+        h: 40,
+        showAboveY: 0,
+        showBelowX: 0,
+        revealArea: {
+            x: 665,
+            y: 315,
+            w: 70,
+            h: 60
+        },
+        revealed: false,
+        revealMode: "areaOnce"
+    },
     platforms: [
-        // === OBERE EBENE (sieht wie normales Level aus) ===
-        // Boden mit verdächtigem Loch in der Mitte
-        { x: 0, y: 280, w: 300, h: 20 },
-        { x: 500, y: 280, w: 300, h: 20 },
-        // Plattformen zum "Exit" oben rechts
-        { x: 600, y: 200, w: 100, h: 20 },
-        { x: 650, y: 130, w: 120, h: 20 },
-        // Kleine Plattform über dem Loch (Versuchung)
-        { x: 360, y: 220, w: 80, h: 20 },
-
-        // === UNTERE EBENE (der echte Weg) ===
-        // Wände des Schachts
-        { x: 280, y: 300, w: 20, h: 200 },
-        { x: 500, y: 300, w: 20, h: 200 },
-        // Boden des Schachts
-        { x: 280, y: 500, w: 240, h: 20 },
-        // Plattformen zum echten Exit
-        { x: 320, y: 570, w: 80, h: 20 },
-        { x: 420, y: 620, w: 80, h: 20 },
-        // Boden unten
-        { x: 250, y: 660, w: 300, h: 40 },
+        {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 500
+        },
+        {
+            x: 790,
+            y: 0,
+            w: 10,
+            h: 500
+        },
+        {
+            x: 0,
+            y: 0,
+            w: 800,
+            h: 10
+        },
+        {
+            x: 10,
+            y: 470,
+            w: 780,
+            h: 30
+        }
     ],
     spikes: [
-        // Spikes die das Loch "gefährlich" aussehen lassen (aber FakeSpikes!)
-        // Echte Spikes am oberen Weg
-        { x: 650, y: 110, w: 120, h: 15, dir: 'down' },
-        // Spikes im Schacht (echte Gefahr)
-        { x: 300, y: 485, w: 50, h: 15, dir: 'up' },
-        { x: 450, y: 485, w: 50, h: 15, dir: 'up' },
+        {
+            x: 260,
+            y: 450,
+            w: 20,
+            h: 20,
+            dir: "up"
+        },
+        {
+            x: 240,
+            y: 450,
+            w: 20,
+            h: 20,
+            dir: "up"
+        }
     ],
     traps: [
-        // FakeExit oben rechts — sieht echt aus, killt dich
-        new FakeExit(730, 90),
-        // FakeSpikes am Rand des Lochs — sehen tödlich aus, sind harmlos
+        new DarknessOverlay(40),
+        new InvertTriggerLine(330),
+        new InvertTriggerLine(480),
+        new WindZone(380, 400, 80, 70, -4.5, 0),
+        new RevealPlatform(370, 385, 80, 20, {
+            x: 350,
+            y: 270,
+            w: 200,
+            h: 100
+        }),
         new FakeSpikes([
-            { x: 310, y: 265, w: 40, h: 15, dir: 'up' },
-            { x: 450, y: 265, w: 40, h: 15, dir: 'up' },
+            {
+                x: 215,
+                y: 450,
+                w: 20,
+                h: 20,
+                dir: "up"
+            }
         ]),
-        // FakeFloor über dem Loch — sieht wie Boden aus, man fällt durch
-        new FakeFloor(300, 280, 200, 20),
-        // FallingCeiling wenn man zum FakeExit klettert
-        new FallingCeiling(660, 0, 100, 30, 640),
+        Object.assign(new ShootingSpike(770, 365, "left", 685, 3, null, null, true), {
+            triggerMode: "area",
+            triggerArea: {
+                x: 370,
+                y: 360,
+                w: 40,
+                h: 30
+            }
+        }),
+        new FakeExit(730, 110, 500),
+        new FallingCeiling(600, 10, 60, 30, 630, false),
+        Object.assign(new FallingCeiling(525, 10, 60, 30, 535, false), {
+            triggerMode: "area",
+            triggerArea: {
+                x: 490,
+                y: 115,
+                w: 80,
+                h: 60
+            }
+        }),
+        new MovingPlatform(305, 225, 80, 20, 495, 180, 0.5, undefined),
+        new TrollShaker(580, 180, 130, 20),
+        new HiddenPlatform(10, 385, 40, 20),
+        new HiddenPlatform(90, 330, 75, 20),
+        new HiddenPlatform(195, 280, 75, 20)
     ],
 });
