@@ -897,7 +897,7 @@ const game = {
             if (this.levelCompleteTimer <= 0) {
                 // Multiplayer: finish or advance
                 if (typeof MP !== 'undefined' && MP.state === 'racing') {
-                    if (this.currentLevel >= MP.levelEnd) {
+                    if (this.sharedLevelMode || this.currentLevel >= MP.levelEnd) {
                         MP.sendFinish();
                         // Wait for server results (MP.onMessage handles state change)
                     } else {

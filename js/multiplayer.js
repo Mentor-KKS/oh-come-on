@@ -16,8 +16,7 @@ const MP = {
         if (loc.protocol === 'file:' || loc.hostname === 'localhost' || loc.hostname === '127.0.0.1' || !loc.hostname) {
             return 'ws://localhost:3000';
         }
-        const wsProt = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-        return wsProt + '//' + loc.hostname + ':3000';
+        return 'wss://oh-come-on-production.up.railway.app';
     })(),
 
     // ── State ──────────────────────────────────────────────
@@ -215,8 +214,19 @@ const MP = {
                 this.raceStartTime = Date.now();
                 this.myFinishTime = 0;
                 // Start the level in game
-                const startIdx = this.raceMode === 'single' ? this.selectedLevel : this.levelStart;
-                game.startLevel(startIdx);
+                if (this.raceMode === 'shared' && this.sharedLevelCode) {
+                    try {
+                        const levelData = deserializeCommunityLevelFromCode(this.sharedLevelCode.replace(/\s+/g, ''));
+                        game.startSharedLevel(levelData, this.sharedLevelCode);
+                    } catch {
+                        this.error = 'Failed to load shared level';
+                        this.errorTimer = 180;
+                        this.state = 'inRoom';
+                    }
+                } else {
+                    const startIdx = this.raceMode === 'single' ? this.selectedLevel : this.levelStart;
+                    game.startLevel(startIdx);
+                }
                 break;
 
             case 'positions':
@@ -693,9 +703,11 @@ const MP = {
     },
 
     _getRoomItems() {
-        const modeLabels = { single: 'Single Level', phase: 'Phase', all: 'All Levels', speedrun_phase: 'Speedrun Phase', speedrun_all: 'Speedrun All' };
+        const modeLabels = { single: 'Single Level', phase: 'Phase', all: 'All Levels', speedrun_phase: 'Speedrun Phase', speedrun_all: 'Speedrun All', shared: 'Shared Level' };
         let levelLabel = '';
-        if ((this.raceMode === 'single' || this.raceMode === 'speedrun_phase') && typeof LEVELS !== 'undefined' && LEVELS[this.selectedLevel]) {
+        if (this.raceMode === 'shared') {
+            levelLabel = this.sharedLevelCode ? 'Code loaded' : 'No code';
+        } else if ((this.raceMode === 'single' || this.raceMode === 'speedrun_phase') && typeof LEVELS !== 'undefined' && LEVELS[this.selectedLevel]) {
             if (this.raceMode === 'speedrun_phase') {
                 levelLabel = 'Phase ' + (Math.floor(this.selectedLevel / PHASE_SIZE) + 1);
             } else {
@@ -710,9 +722,13 @@ const MP = {
         const me = this.getMyPlayer();
         const items = [
             { id: 'mode', label: 'MODE', value: modeLabels[this.raceMode] || 'Single', hostOnly: true },
-            { id: 'level', label: 'LEVEL', value: levelLabel, hostOnly: true },
-            { id: 'ready', label: me?.ready ? 'UNREADY' : 'READY' },
         ];
+        if (this.raceMode === 'shared') {
+            items.push({ id: 'paste', label: 'PASTE LEVEL CODE', hostOnly: true, value: this.sharedLevelCode ? '\u2713' : '', valueColor: '#2ecc71' });
+        } else {
+            items.push({ id: 'level', label: 'LEVEL', value: levelLabel, hostOnly: true });
+        }
+        items.push({ id: 'ready', label: me?.ready ? 'UNREADY' : 'READY' });
         if (this.isHost) {
             items.push({
                 id: 'start', label: 'START RACE',
@@ -844,7 +860,7 @@ const MP = {
             const item = items[this.lobbyIndex];
             if (!item) return;
             if (item.id === 'mode') {
-                const modes = ['single', 'phase', 'all', 'speedrun_phase', 'speedrun_all'];
+                const modes = ['single', 'phase', 'all', 'speedrun_phase', 'speedrun_all', 'shared'];
                 const ci = modes.indexOf(this.raceMode);
                 this.raceMode = modes[(ci + dir + modes.length) % modes.length];
                 this.sendLevelConfig();
@@ -887,6 +903,36 @@ const MP = {
             const item = items[this.lobbyIndex];
             if (!item) return;
             switch (item.id) {
+                case 'paste':
+                    if (this.isHost) {
+                        navigator.clipboard.readText().then(text => {
+                            const raw = (text || '').trim().replace(/\s+/g, '');
+                            if (!raw) {
+                                this.error = 'Clipboard is empty';
+                                this.errorTimer = 180;
+                                return;
+                            }
+                            if (typeof deserializeCommunityLevelFromCode !== 'function') {
+                                this.error = 'Level loader not available';
+                                this.errorTimer = 180;
+                                return;
+                            }
+                            try {
+                                deserializeCommunityLevelFromCode(raw);
+                                this.sharedLevelCode = raw;
+                                this.levelSource = 'shared';
+                                this.sendLevelConfig();
+                                this.notifications.push({ text: 'Shared level loaded!', color: '#2ecc71', timer: 150 });
+                            } catch {
+                                this.error = 'Invalid level code';
+                                this.errorTimer = 180;
+                            }
+                        }).catch(() => {
+                            this.error = 'Clipboard access denied';
+                            this.errorTimer = 180;
+                        });
+                    }
+                    break;
                 case 'ready': {
                     const me = this.getMyPlayer();
                     if (me) {
