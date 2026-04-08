@@ -1,4 +1,5 @@
 # Lokale Dev-Dateien
-LEVEL_PLAN.md
+*.md
+!README.md
 node_modules/
 test-levels/
