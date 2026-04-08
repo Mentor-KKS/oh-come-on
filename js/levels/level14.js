@@ -8,8 +8,14 @@
 // ================================================================
 LEVELS.push({
     name: "Shadow",
+    levelType: "shadow",
+    shadowMode: "mirrorHorizontal",
     width: 1200,
     height: 750,
+    worlds: {
+        main: { x: 0, y: 0, w: 1200, h: 375 },
+        shadow: { x: 0, y: 375, w: 1200, h: 375 },
+    },
     player: { x: 80, y: 315 },
     exit: { x: 1120, y: 295, w: 30, h: 40 },
     // Shadow-Exit (nur visuell) — lila Farbe, passend zum Shadow

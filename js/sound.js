@@ -89,6 +89,10 @@ const SFX = {
         this.tone(440, 660, 0.08, 'square', 0.03);
     },
 
+    menuTick() {
+        this.tone(300, 350, 0.03, 'square', 0.012);
+    },
+
     invertFlip() {
         this.tone(800, 200, 0.15, 'square', 0.03);
         setTimeout(() => this.tone(200, 800, 0.15, 'square', 0.03), 100);
