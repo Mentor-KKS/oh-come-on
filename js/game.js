@@ -1171,18 +1171,44 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
-window.loadSharedLevelFromOverlay = () => game.loadSharedLevelFromOverlay();
-window.closeSharedLevelOverlay = () => game.closeSharedLevelOverlay(false);
-window.pasteSharedLevelCode = () => game.pasteSharedLevelCode();
+window.loadSharedLevelFromOverlay = () => {
+    if (typeof MP !== 'undefined' && MP._mpSharedOverlayActive) {
+        MP._loadSharedLevelFromOverlay();
+    } else {
+        game.loadSharedLevelFromOverlay();
+    }
+};
+window.closeSharedLevelOverlay = () => {
+    if (typeof MP !== 'undefined' && MP._mpSharedOverlayActive) {
+        MP._closeSharedLevelOverlay();
+    } else {
+        game.closeSharedLevelOverlay(false);
+    }
+};
+window.pasteSharedLevelCode = () => {
+    if (typeof MP !== 'undefined' && MP._mpSharedOverlayActive) {
+        MP._pasteSharedLevelCode();
+    } else {
+        game.pasteSharedLevelCode();
+    }
+};
 window.handleSharedLevelOverlayKeydown = (event) => {
     if (event.key === 'Escape') {
         event.preventDefault();
-        game.closeSharedLevelOverlay(false);
+        if (typeof MP !== 'undefined' && MP._mpSharedOverlayActive) {
+            MP._closeSharedLevelOverlay();
+        } else {
+            game.closeSharedLevelOverlay(false);
+        }
         return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
-        game.loadSharedLevelFromOverlay();
+        if (typeof MP !== 'undefined' && MP._mpSharedOverlayActive) {
+            MP._loadSharedLevelFromOverlay();
+        } else {
+            game.loadSharedLevelFromOverlay();
+        }
     }
 };
 

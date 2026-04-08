@@ -905,32 +905,7 @@ const MP = {
             switch (item.id) {
                 case 'paste':
                     if (this.isHost) {
-                        navigator.clipboard.readText().then(text => {
-                            const raw = (text || '').trim().replace(/\s+/g, '');
-                            if (!raw) {
-                                this.error = 'Clipboard is empty';
-                                this.errorTimer = 180;
-                                return;
-                            }
-                            if (typeof deserializeCommunityLevelFromCode !== 'function') {
-                                this.error = 'Level loader not available';
-                                this.errorTimer = 180;
-                                return;
-                            }
-                            try {
-                                deserializeCommunityLevelFromCode(raw);
-                                this.sharedLevelCode = raw;
-                                this.levelSource = 'shared';
-                                this.sendLevelConfig();
-                                this.notifications.push({ text: 'Shared level loaded!', color: '#2ecc71', timer: 150 });
-                            } catch {
-                                this.error = 'Invalid level code';
-                                this.errorTimer = 180;
-                            }
-                        }).catch(() => {
-                            this.error = 'Clipboard access denied';
-                            this.errorTimer = 180;
-                        });
+                        this._openSharedLevelOverlay();
                     }
                     break;
                 case 'ready': {
@@ -951,6 +926,63 @@ const MP = {
                     break;
             }
         }
+    },
+
+    // ── Shared Level Overlay (reuses the existing HTML overlay) ──
+    _mpSharedOverlayActive: false,
+
+    _openSharedLevelOverlay() {
+        const overlay = document.getElementById('sharedLevelOverlay');
+        const input = document.getElementById('sharedLevelCodeInput');
+        const error = document.getElementById('sharedLevelOverlayError');
+        if (!overlay || !input) return;
+
+        this._mpSharedOverlayActive = true;
+        input.value = this.sharedLevelCode || '';
+        if (error) error.textContent = '';
+        overlay.classList.add('open');
+        input.focus();
+    },
+
+    _closeSharedLevelOverlay() {
+        const overlay = document.getElementById('sharedLevelOverlay');
+        if (overlay) overlay.classList.remove('open');
+        this._mpSharedOverlayActive = false;
+    },
+
+    _loadSharedLevelFromOverlay() {
+        const input = document.getElementById('sharedLevelCodeInput');
+        const error = document.getElementById('sharedLevelOverlayError');
+        if (!input) return;
+
+        const code = input.value.trim().replace(/\s+/g, '');
+        if (!code) {
+            if (error) error.textContent = 'Please paste a shared level code first.';
+            input.focus();
+            return;
+        }
+
+        try {
+            deserializeCommunityLevelFromCode(code);
+            this.sharedLevelCode = code;
+            this.levelSource = 'shared';
+            this.sendLevelConfig();
+            this._closeSharedLevelOverlay();
+            this.notifications.push({ text: 'Shared level loaded!', color: '#2ecc71', timer: 150 });
+        } catch (err) {
+            if (error) error.textContent = 'Invalid level code.';
+            input.focus();
+            input.select();
+        }
+    },
+
+    _pasteSharedLevelCode() {
+        const input = document.getElementById('sharedLevelCodeInput');
+        if (!input) return;
+        navigator.clipboard.readText().then(text => {
+            input.value = text || '';
+            input.focus();
+        }).catch(() => {});
     },
 };
 
