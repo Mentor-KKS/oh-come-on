@@ -26,6 +26,7 @@ const SETTINGS = {
     keys: { left: null, right: null, jump: null },
     musicVol: 100,
     sfxVol: 100,
+    trollMessages: true,
 
     load() {
         try {
@@ -39,6 +40,7 @@ const SETTINGS = {
                 }
                 if (data.musicVol !== undefined) this.musicVol = data.musicVol;
                 if (data.sfxVol !== undefined) this.sfxVol = data.sfxVol;
+                if (typeof data.trollMessages === 'boolean') this.trollMessages = data.trollMessages;
             }
         } catch (e) {}
     },
@@ -48,6 +50,7 @@ const SETTINGS = {
             keys: this.keys,
             musicVol: this.musicVol,
             sfxVol: this.sfxVol,
+            trollMessages: this.trollMessages,
         }));
     },
 };

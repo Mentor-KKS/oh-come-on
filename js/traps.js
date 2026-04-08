@@ -106,6 +106,7 @@ class FallingCeiling {
         this.triggerArea = null;
         this.triggered = false;
         this.vy = 0;
+        this.stopY = null;
         this.solid = true;
         this.fake = fake || false;
         this.type = 'fallingCeiling';
@@ -142,6 +143,10 @@ class FallingCeiling {
         if (this.triggered) {
             this.vy += 0.2;
             this.y += this.vy;
+            if (Number.isFinite(this.stopY) && this.y >= this.stopY) {
+                this.y = this.stopY;
+                this.vy = 0;
+            }
         }
         if (this.triggered && player.alive && this.vy > 0) {
             if (aabb(player, this)) player.die();
@@ -207,12 +212,7 @@ class MovingExit {
         }
     }
     draw() {
-        rect(this.x - 2, this.y - 2, this.w + 4, this.h + 4, '#2ecc71');
-        rect(this.x, this.y, this.w, this.h, '#27ae60');
-        ctx.fillStyle = '#f1c40f';
-        ctx.beginPath();
-        ctx.arc(this.x + this.w - 8, this.y + this.h / 2, 3, 0, Math.PI * 2);
-        ctx.fill();
+        drawExit(this);
     }
     getBounds() {
         return { x: this.x, y: this.y, w: this.w, h: this.h };
@@ -299,6 +299,8 @@ class ShootingSpike {
         this.triggerDist = 80;        // für proximity-Modus
         this.triggerArea = null;      // für area-Modus: {x,y,w,h}
         this.triggered = false;
+        this.stopped = false;
+        this.maxRange = null;
         this.disguised = disguised || false;
         this.type = 'shootingSpike';
     }
@@ -330,12 +332,20 @@ class ShootingSpike {
         if (!this.triggered && player.alive) {
             if (this.checkTrigger(player)) this.triggered = true;
         }
-        if (this.triggered) {
+        if (this.triggered && !this.stopped) {
             const d = this.dir;
             if (d === 'right' || d === 1)  this.x += this.speed;
             else if (d === 'left' || d === -1) this.x -= this.speed;
             else if (d === 'up')    this.y -= this.speed;
             else if (d === 'down')  this.y += this.speed;
+            if (Number.isFinite(this.maxRange) && this.maxRange > 0) {
+                const limit = Math.max(0, this.maxRange);
+                const sDir = (d === 'right' || d === 1) ? 'right' : (d === 'up') ? 'up' : (d === 'down') ? 'down' : 'left';
+                if (sDir === 'right' && this.x >= this.origX + limit) { this.x = this.origX + limit; this.stopped = true; }
+                else if (sDir === 'left' && this.x <= this.origX - limit) { this.x = this.origX - limit; this.stopped = true; }
+                else if (sDir === 'up' && this.y <= this.origY - limit) { this.y = this.origY - limit; this.stopped = true; }
+                else if (sDir === 'down' && this.y >= this.origY + limit) { this.y = this.origY + limit; this.stopped = true; }
+            }
         }
         if (this.triggered && player.alive) {
             if (aabb(player, { x: this.x + 2, y: this.y + 2, w: this.w - 4, h: this.h - 4 })) {
@@ -367,6 +377,7 @@ class ShootingSpike {
         this.x = this.origX;
         this.y = this.origY;
         this.triggered = false;
+        this.stopped = false;
     }
 }
 
@@ -468,18 +479,30 @@ class MovingSpike {
 
 // ── NEW TRAPS ───────────────────────────────────────────────
 
-// Unsichtbare Plattform — erscheint wenn Spieler in Trigger-Zone springt
+// Unsichtbare Plattform — von Anfang an solid, aber nie sichtbar
 class HiddenPlatform {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h || 20;
+        this.solid = true;
+        this.type = 'hiddenPlatform';
+    }
+    update() {}
+    draw() {}
+    reset() {}
+}
+
+// Reveal Platform — erscheint erst, wenn der Spieler die Reveal-Area betritt
+class RevealPlatform {
     constructor(x, y, w, h, triggerArea) {
         this.x = x; this.y = y; this.w = w; this.h = h || 20;
         this.solid = false;
         this.visible = false;
         this.triggerArea = triggerArea; // {x, y, w, h}
         this.alpha = 0;
-        this.type = 'hiddenPlatform';
+        this.type = 'revealPlatform';
     }
     update(player) {
-        if (!this.visible && player.alive) {
+        if (!this.visible && player.alive && this.triggerArea) {
             const px = player.x + player.w / 2;
             const py = player.y + player.h / 2;
             if (px > this.triggerArea.x && px < this.triggerArea.x + this.triggerArea.w &&
@@ -493,7 +516,10 @@ class HiddenPlatform {
         }
     }
     draw() {
-        // Permanent unsichtbar
+        if (this.alpha <= 0) return;
+        ctx.globalAlpha = this.alpha;
+        drawPlatform({ x:this.x, y:this.y, w:this.w, h:this.h, skin:this.skin || 'ghost' });
+        ctx.globalAlpha = 1;
     }
     reset() {
         this.visible = false;
@@ -551,8 +577,7 @@ class MovingPlatform {
     }
     draw() {
         if (!this.solid) return;
-        rect(this.x, this.y, this.w, this.h, '#b0d0f0');
-        rect(this.x, this.y, this.w, 3, '#d0e8ff');
+        drawPlatform({ x:this.x, y:this.y, w:this.w, h:this.h, skin:this.skin || 'moving', material:this.material });
     }
     reset() {
         this.x = this.origX;
@@ -568,13 +593,14 @@ class FakeExit {
     constructor(x, y, showAboveY) {
         this.x = x; this.y = y;
         this.w = 30; this.h = 40;
-        this.showAboveY = showAboveY || H;
+        this.showAboveY = Number.isFinite(showAboveY) ? showAboveY : undefined;
+        this.skin = 'exit';
         this.type = 'fakeExit';
         this.triggered = false;
         this.visible = false;
     }
     update(player) {
-        this.visible = player.y < this.showAboveY;
+        this.visible = !Number.isFinite(this.showAboveY) || player.y < this.showAboveY;
         if (!this.triggered && this.visible && player.alive) {
             if (aabb(player, this)) {
                 this.triggered = true;
@@ -585,14 +611,7 @@ class FakeExit {
     }
     draw() {
         if (this.triggered || !this.visible) return;
-        ctx.fillStyle = 'rgba(46, 204, 113, 0.15)';
-        ctx.fillRect(this.x - 6, this.y - 6, this.w + 12, this.h + 12);
-        rect(this.x - 2, this.y - 2, this.w + 4, this.h + 4, '#2ecc71');
-        rect(this.x, this.y, this.w, this.h, '#27ae60');
-        ctx.fillStyle = '#f1c40f';
-        ctx.beginPath();
-        ctx.arc(this.x + this.w - 8, this.y + this.h / 2, 3, 0, Math.PI * 2);
-        ctx.fill();
+        drawExit(this);
     }
     reset() {
         this.triggered = false;
@@ -844,6 +863,18 @@ class FakeSpikes {
 // === NEUE TRAPS FÜR LEVEL 11-15 ===
 
 // Darkness Overlay — Level ist dunkel, nur Umkreis um Spieler sichtbar
+function drawDarknessAroundPlayer(player, radius) {
+    if (!player) return;
+    const px = player.x + player.w / 2;
+    const py = player.y + player.h / 2;
+    const grad = ctx.createRadialGradient(px, py, 0, px, py, radius * 1.8);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.45, 'rgba(0,0,0,0.4)');
+    grad.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(-2000, -500, 5000, 2500);
+}
+
 class DarknessOverlay {
     constructor(radius) {
         this.radius = radius || 95;
@@ -852,15 +883,11 @@ class DarknessOverlay {
     update() {}
     draw() {
         const player = game.player;
+        const levelData = game?.levelData;
         if (!player) return;
-        const px = player.x + player.w / 2;
-        const py = player.y + player.h / 2;
-        const grad = ctx.createRadialGradient(px, py, 0, px, py, this.radius * 1.8);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(0.45, 'rgba(0,0,0,0.4)');
-        grad.addColorStop(1, 'rgba(0,0,0,1)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(-2000, -500, 5000, 2500);
+        if (levelData && levelData.currentDarknessEnabled === false) return;
+        const radius = Number.isFinite(levelData?.currentDarknessRadius) ? levelData.currentDarknessRadius : this.radius;
+        drawDarknessAroundPlayer(player, radius);
     }
     reset() {}
 }
@@ -925,34 +952,418 @@ class WindZone {
     reset() {}
 }
 
+class DoubleJumpZone {
+    constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w || 140;
+        this.h = h || 100;
+        this.type = 'doubleJumpZone';
+    }
+    contains(player) {
+        if (!player) return false;
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        return px >= this.x && px <= this.x + this.w && py >= this.y && py <= this.y + this.h;
+    }
+    update() {}
+    draw() {}
+    reset() {}
+}
+
+// Camera Trigger - schaltet Kamera-Verhalten um, sobald der Spieler den Bereich betritt
+class CameraTrigger {
+    constructor(x, y, w, h, verticalScroll, cameraAnchorX, cameraAnchorY) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.verticalScroll = verticalScroll !== undefined ? !!verticalScroll : true;
+        this.cameraAnchorX = Number.isFinite(cameraAnchorX) ? Math.max(0, Math.min(1, cameraAnchorX)) : undefined;
+        this.cameraAnchorY = Number.isFinite(cameraAnchorY) ? Math.max(0, Math.min(1, cameraAnchorY)) : undefined;
+        this.triggered = false;
+        this.type = 'cameraTrigger';
+    }
+    update(player) {
+        if (this.triggered || !player.alive || !game.levelData) return;
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        if (px < this.x || px > this.x + this.w || py < this.y || py > this.y + this.h) return;
+        this.triggered = true;
+        game.levelData.currentCameraRoom = null;
+        resetDynamicWorldState(game.levelData);
+        if (player) player.gDir = game.levelData.currentGravityDir;
+        game.levelData.currentVerticalScroll = !!this.verticalScroll;
+        if (Number.isFinite(this.cameraAnchorX)) game.levelData.currentCameraAnchorX = Math.max(0, Math.min(1, this.cameraAnchorX));
+        if (Number.isFinite(this.cameraAnchorY)) game.levelData.currentCameraAnchorY = Math.max(0, Math.min(1, this.cameraAnchorY));
+    }
+    draw() {}
+    reset() {
+        this.triggered = false;
+    }
+}
+
+// Camera Room - fester sichtbarer Bildschirmbereich von 800x500
+class CameraRoom {
+    constructor(x, y, w, h, fitMode) {
+        this.x = x;
+        this.y = y;
+        this.w = Number.isFinite(w) ? w : 800;
+        this.h = Number.isFinite(h) ? h : 500;
+        this.fitMode = fitMode || 'native';
+        this.gravityDir = undefined;
+        this.jumpFlipsGravity = undefined;
+        this.doubleJumpMode = 'inherit';
+        this.darknessMode = 'inherit';
+        this.darknessRadius = undefined;
+        this.type = 'cameraRoom';
+    }
+    update(player) {
+        if (!player.alive || !game.levelData) return;
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        if (px < this.x || px > this.x + this.w || py < this.y || py > this.y + this.h) return;
+        const room = game.levelData.currentCameraRoom;
+        if (!room || room.x !== this.x || room.y !== this.y || room.w !== this.w || room.h !== this.h || room.fitMode !== this.fitMode) {
+            game.levelData.currentCameraRoom = { x: this.x, y: this.y, w: this.w, h: this.h, fitMode: this.fitMode || 'native' };
+            game.levelData.currentVerticalScroll = false;
+            applyDynamicWorldOverrides(game.levelData, this);
+            if (player) player.gDir = game.levelData.currentGravityDir;
+            if (game) {
+                game.pendingCameraSnap = true;
+                if (typeof snapCameraToPlayerImmediate === 'function') {
+                    snapCameraToPlayerImmediate(game, game.levelData, player);
+                }
+            }
+        }
+    }
+    draw() {}
+    reset() {}
+}
+
+function resetDynamicWorldState(levelData) {
+    if (!levelData) return;
+    levelData.currentGravityDir = Number.isFinite(levelData.gravityDir) ? (levelData.gravityDir >= 0 ? 1 : -1) : 1;
+    levelData.currentJumpFlipsGravity = !!levelData.jumpFlipsGravity;
+    levelData.currentDoubleJumpEnabled = !!levelData.doubleJump;
+    levelData.currentDarknessEnabled = !!(levelData.traps && levelData.traps.some(t => t.type === 'darknessOverlay'));
+    levelData.currentDarknessRadius = undefined;
+}
+
+function applyDynamicWorldOverrides(levelData, source) {
+    if (!levelData) return;
+    resetDynamicWorldState(levelData);
+    if (!source) return;
+    if (Number.isFinite(source.gravityDir)) levelData.currentGravityDir = source.gravityDir >= 0 ? 1 : -1;
+    if (typeof source.jumpFlipsGravity === 'boolean') levelData.currentJumpFlipsGravity = !!source.jumpFlipsGravity;
+    const djMode = source.doubleJumpMode || 'inherit';
+    if (djMode === 'on') levelData.currentDoubleJumpEnabled = true;
+    else if (djMode === 'off') levelData.currentDoubleJumpEnabled = false;
+    const mode = source.darknessMode || 'inherit';
+    if (mode === 'off') {
+        levelData.currentDarknessEnabled = false;
+        levelData.currentDarknessRadius = undefined;
+    } else if (mode === 'on') {
+        levelData.currentDarknessEnabled = true;
+        if (Number.isFinite(source.darknessRadius) && source.darknessRadius > 0) {
+            levelData.currentDarknessRadius = source.darknessRadius;
+        }
+    }
+}
+
+function getDefaultShadowWorlds(levelData) {
+    const width = Math.max(1, levelData?.width || W);
+    const height = Math.max(1, levelData?.height || H);
+    const halfH = Math.round(height / 2);
+    return {
+        main: { x: 0, y: 0, w: width, h: halfH },
+        shadow: { x: 0, y: halfH, w: width, h: height - halfH },
+    };
+}
+
+function cloneWorldRect(rect, fallback) {
+    const base = rect || fallback;
+    return {
+        x: Number.isFinite(base?.x) ? base.x : fallback.x,
+        y: Number.isFinite(base?.y) ? base.y : fallback.y,
+        w: Number.isFinite(base?.w) ? base.w : fallback.w,
+        h: Number.isFinite(base?.h) ? base.h : fallback.h,
+    };
+}
+
+function getLevelWorlds(levelData) {
+    if (!levelData || levelData.levelType !== 'shadow') return null;
+    const fallback = getDefaultShadowWorlds(levelData);
+    const worlds = levelData.worlds || {};
+    return {
+        main: cloneWorldRect(worlds.main, fallback.main),
+        shadow: cloneWorldRect(worlds.shadow, fallback.shadow),
+    };
+}
+
+function getLevelWorldAtPoint(levelData, x, y) {
+    const worlds = getLevelWorlds(levelData);
+    if (!worlds) return null;
+    const inside = rect => x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+    if (inside(worlds.main)) return 'main';
+    if (inside(worlds.shadow)) return 'shadow';
+    return null;
+}
+
+function getShadowControlWorld(levelData) {
+    if (!levelData || levelData.levelType !== 'shadow') return 'main';
+    return levelData.currentShadowControlWorld === 'shadow' ? 'shadow' : 'main';
+}
+
+function resetShadowWorldState(levelData) {
+    if (!levelData) return;
+    if (levelData.levelType === 'shadow') levelData.currentShadowControlWorld = 'main';
+    else delete levelData.currentShadowControlWorld;
+}
+
+function getPlayableWorldMetrics(worldName, worlds, mode, actorW, actorH) {
+    const world = worlds[worldName];
+    let topPad = 10;
+    let bottomPad = 10;
+    if (mode === 'verticalFlip') {
+        if (worldName === 'main') bottomPad = 30;
+        else topPad = 30;
+    }
+    return {
+        world,
+        minX: world.x,
+        maxX: world.x + world.w - actorW,
+        minY: world.y + topPad,
+        maxY: world.y + world.h - bottomPad - actorH,
+        ceilingY: world.y + topPad,
+        floorY: world.y + world.h - bottomPad,
+    };
+}
+
+function mapShadowActorBetweenWorlds(actorRect, fromWorldName, toWorldName, levelData) {
+    const worlds = getLevelWorlds(levelData);
+    if (!worlds || !actorRect || !worlds[fromWorldName] || !worlds[toWorldName]) return null;
+    const w = actorRect.w ?? 20;
+    const h = actorRect.h ?? 20;
+    const fromWorld = worlds[fromWorldName];
+    const toWorld = worlds[toWorldName];
+    const mode = levelData?.shadowMode || 'mirrorHorizontal';
+    const localX = Math.max(0, Math.min(fromWorld.w - w, actorRect.x - fromWorld.x));
+    const localY = Math.max(0, Math.min(fromWorld.h - h, actorRect.y - fromWorld.y));
+    let nextX = toWorld.x + localX;
+    let nextY = toWorld.y + localY;
+
+    if (mode === 'mirrorHorizontal') {
+        nextX = toWorld.x + Math.max(0, Math.min(toWorld.w - w, toWorld.w - localX - w));
+    } else if (mode === 'verticalFlip') {
+        const fromMetrics = getPlayableWorldMetrics(fromWorldName, worlds, mode, w, h);
+        const toMetrics = getPlayableWorldMetrics(toWorldName, worlds, mode, w, h);
+        nextX = toWorld.x + localX;
+        if (fromWorldName === 'main' && toWorldName === 'shadow') {
+            const actorBottom = Math.max(fromMetrics.minY + h, Math.min(fromMetrics.floorY, actorRect.y + h));
+            const distToFloor = Math.max(0, fromMetrics.floorY - actorBottom);
+            nextY = Math.max(toMetrics.minY, Math.min(toMetrics.maxY, toMetrics.ceilingY + distToFloor));
+        } else if (fromWorldName === 'shadow' && toWorldName === 'main') {
+            const actorTop = Math.max(fromMetrics.ceilingY, Math.min(fromMetrics.maxY, actorRect.y));
+            const distToCeiling = Math.max(0, actorTop - fromMetrics.ceilingY);
+            nextY = Math.max(toMetrics.minY, Math.min(toMetrics.maxY, toMetrics.floorY - distToCeiling - h));
+        }
+    }
+
+    return { x: nextX, y: nextY, w, h };
+}
+
+function swapShadowWorldState(levelData, player) {
+    if (!levelData || levelData.levelType !== 'shadow' || !player) return false;
+    const fromWorld = getShadowControlWorld(levelData);
+    const toWorld = fromWorld === 'shadow' ? 'main' : 'shadow';
+    const mapped = mapShadowActorBetweenWorlds(player, fromWorld, toWorld, levelData);
+    if (!mapped) return false;
+    levelData.currentShadowControlWorld = toWorld;
+    player.x = mapped.x;
+    player.y = mapped.y;
+    player.prevX = mapped.x;
+    player.prevY = mapped.y;
+    levelData.currentCameraRoom = null;
+    levelData.currentVerticalScroll = !!levelData.verticalScroll;
+    levelData.currentCameraAnchorX = Number.isFinite(levelData.cameraAnchorX) ? Math.max(0, Math.min(1, levelData.cameraAnchorX)) : 0.5;
+    levelData.currentCameraAnchorY = Number.isFinite(levelData.cameraAnchorY) ? Math.max(0, Math.min(1, levelData.cameraAnchorY)) : 0.5;
+    applyDynamicWorldOverrides(levelData, null);
+    player.gDir = levelData.currentGravityDir;
+    if (game) {
+        game.pendingCameraSnap = true;
+        if (typeof snapCameraToPlayerImmediate === 'function') {
+            snapCameraToPlayerImmediate(game, levelData, player);
+        }
+    }
+    return true;
+}
+
+function getActiveLevelExit(levelData) {
+    if (!levelData) return null;
+    if (levelData.levelType === 'shadow' && getShadowControlWorld(levelData) === 'shadow' && levelData.shadowExit) {
+        return levelData.shadowExit;
+    }
+    return levelData.exit || null;
+}
+
+class WarpDoor {
+    constructor(x, y, targetX, targetY, keepVelocity) {
+        this.x = x; this.y = y;
+        this.w = 30; this.h = 40;
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.keepVelocity = !!keepVelocity;
+        this.skin = 'warp';
+        this.type = 'warpDoor';
+    }
+    update(player) {
+        if (!player.alive || player.warpCooldown > 0) return;
+        if (!aabb(player, this)) return;
+        if (!Number.isFinite(this.targetX) || !Number.isFinite(this.targetY)) return;
+        if (game?.levelData?.levelType === 'shadow') {
+            const sourceWorld = getLevelWorldAtPoint(game.levelData, this.x + this.w / 2, this.y + this.h / 2);
+            const targetWorld = getLevelWorldAtPoint(game.levelData, this.targetX + player.w / 2, this.targetY + player.h / 2);
+            if (sourceWorld && targetWorld && sourceWorld !== targetWorld) return;
+        }
+        player.x = this.targetX;
+        player.y = this.targetY;
+        player.prevX = player.x;
+        player.prevY = player.y;
+        if (!this.keepVelocity) {
+            player.vx = 0;
+            player.vy = 0;
+            player.extVx = 0;
+            player.extVy = 0;
+        }
+        player.warpCooldown = 14;
+        if (game) {
+            game.pendingCameraSnap = true;
+            if (typeof snapCameraToPlayerImmediate === 'function') {
+                snapCameraToPlayerImmediate(game, game.levelData, player);
+            }
+        }
+    }
+    draw() {
+        drawExit(this);
+    }
+    reset() {}
+}
+
+// Warp Zone - teleportiert den Spieler in einen anderen Bereich
+class WarpZone {
+    constructor(x, y, w, h, targetX, targetY, keepVelocity) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.keepVelocity = !!keepVelocity;
+        this.type = 'warpZone';
+    }
+    update(player) {
+        if (!player.alive || player.warpCooldown > 0) return;
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        if (px < this.x || px > this.x + this.w || py < this.y || py > this.y + this.h) return;
+        if (!Number.isFinite(this.targetX) || !Number.isFinite(this.targetY)) return;
+        if (game?.levelData?.levelType === 'shadow') {
+            const sourceWorld = getLevelWorldAtPoint(game.levelData, this.x + this.w / 2, this.y + this.h / 2);
+            const targetWorld = getLevelWorldAtPoint(game.levelData, this.targetX + player.w / 2, this.targetY + player.h / 2);
+            if (sourceWorld && targetWorld && sourceWorld !== targetWorld) return;
+        }
+        player.x = this.targetX;
+        player.y = this.targetY;
+        player.prevX = player.x;
+        player.prevY = player.y;
+        if (!this.keepVelocity) {
+            player.vx = 0;
+            player.vy = 0;
+            player.extVx = 0;
+            player.extVy = 0;
+        }
+        player.warpCooldown = 14;
+        if (game) {
+            game.pendingCameraSnap = true;
+            if (typeof snapCameraToPlayerImmediate === 'function') {
+                snapCameraToPlayerImmediate(game, game.levelData, player);
+            }
+        }
+    }
+    draw() {}
+    reset() {}
+}
+
 // Switch — Schalter der Plattformen mit passender Gruppe togglet
 class Switch {
-    constructor(x, y, group) {
+    constructor(x, y, group, mount, triggeredBy, action) {
         this.x = x; this.y = y;
-        this.w = 36; this.h = 10;
+        this.mount = mount || 'floor';
+        this.w = (this.mount === 'left' || this.mount === 'right') ? 10 : 36;
+        this.h = (this.mount === 'left' || this.mount === 'right') ? 36 : 10;
         this.group = group;
+        this.triggeredBy = triggeredBy || 'player';
+        this.action = action || 'toggle';
         this.pressed = false;
         this.type = 'switch';
     }
-    update(player) {
-        if (this.pressed || !player.alive) return;
-        const standing = player.x + player.w > this.x && player.x < this.x + this.w &&
-                        player.y + player.h > this.y && player.y + player.h < this.y + 14;
-        if (standing) {
-            this.pressed = true;
-            SFX.menuSelect();
+    canBePressedBy(actor) {
+        if (!actor) return false;
+        if (actor.alive === false) return false;
+        const overlapX = actor.x + actor.w > this.x && actor.x < this.x + this.w;
+        const overlapY = actor.y + actor.h > this.y && actor.y < this.y + this.h;
+        let activated = false;
+        if (this.mount === 'floor') activated = overlapX && actor.y + actor.h > this.y && actor.y + actor.h < this.y + 14;
+        else if (this.mount === 'ceiling') activated = overlapX && actor.y < this.y + this.h && actor.y > this.y - 14;
+        else if (this.mount === 'left') activated = overlapY && actor.x + actor.w > this.x && actor.x + actor.w < this.x + 14;
+        else if (this.mount === 'right') activated = overlapY && actor.x < this.x + this.w && actor.x > this.x - 14;
+        return activated;
+    }
+    activate() {
+        if (this.pressed) return;
+        this.pressed = true;
+        SFX.menuSelect();
+        if (this.action === 'swapWorlds') {
+            if (game?.levelData && game?.player) swapShadowWorldState(game.levelData, game.player);
+        } else {
             game.levelData.traps.forEach(t => {
                 if (t.type === 'togglePlatform' && t.group === this.group) {
                     t.active = !t.active;
                 }
             });
+            if (game.levelData && game.levelData.exit) {
+                const exitObj = game.levelData.exit;
+                if ((exitObj.revealMode || 'none') === 'switch' && String(exitObj.revealGroup ?? '') === String(this.group)) {
+                    exitObj.revealed = !exitObj.revealed;
+                }
+            }
+        }
+    }
+    update(player) {
+        if (this.pressed) return;
+        const shadow = game?.levelData?.traps?.find(t => t.type === 'shadowPlayer');
+        let activated = false;
+        if (this.triggeredBy === 'shadow') activated = this.canBePressedBy(shadow);
+        else if (this.triggeredBy === 'both') activated = this.canBePressedBy(player) || this.canBePressedBy(shadow);
+        else activated = this.canBePressedBy(player);
+        if (activated) {
+            this.activate();
         }
     }
     draw() {
-        const offset = this.pressed ? 4 : 0;
-        rect(this.x, this.y + 4, this.w, 6, '#333');
-        rect(this.x + 2, this.y + offset, this.w - 4, 6 - offset,
-             this.pressed ? '#2ecc71' : '#e74c3c');
+        const pressedColor = this.pressed ? '#2ecc71' : '#e74c3c';
+        if (this.mount === 'floor') {
+            const offset = this.pressed ? 4 : 0;
+            rect(this.x, this.y + 4, this.w, 6, '#333');
+            rect(this.x + 2, this.y + offset, this.w - 4, 6 - offset, pressedColor);
+        } else if (this.mount === 'ceiling') {
+            const offset = this.pressed ? 4 : 0;
+            rect(this.x, this.y, this.w, 6, '#333');
+            rect(this.x + 2, this.y + 4, this.w - 4, Math.max(2, 6 - offset), pressedColor);
+        } else if (this.mount === 'left') {
+            const offset = this.pressed ? 4 : 0;
+            rect(this.x + 4, this.y, 6, this.h, '#333');
+            rect(this.x + offset, this.y + 2, 6 - offset, this.h - 4, pressedColor);
+        } else {
+            const offset = this.pressed ? 4 : 0;
+            rect(this.x, this.y, 6, this.h, '#333');
+            rect(this.x + 4, this.y + 2, Math.max(2, 6 - offset), this.h - 4, pressedColor);
+        }
     }
     reset() { this.pressed = false; }
 }
@@ -976,27 +1387,68 @@ class TogglePlatform {
             ctx.setLineDash([]);
             return;
         }
-        rect(this.x, this.y, this.w, this.h, '#b0d0f0');
-        rect(this.x, this.y, this.w, 3, '#d0e8ff');
+        drawPlatform({ x:this.x, y:this.y, w:this.w, h:this.h, skin:this.skin || 'toggle', material:this.material });
     }
     reset() { this.active = this.initialActive; }
 }
 
 // Shadow Player — spiegelt Spieler-Position horizontal, optional mit Y-Offset
 class ShadowPlayer {
-    constructor(yOffset) {
+    constructor(configOrYOffset) {
         this.x = 0; this.y = 0;
         this.w = 20; this.h = 20;
-        this.yOffset = yOffset || 0;  // Vertikaler Offset in Shadow-Welt
+        this.yOffset = 0;
+        this.mode = 'mirrorHorizontal';
+        this.mainWorld = null;
+        this.shadowWorld = null;
+        if (typeof configOrYOffset === 'object' && configOrYOffset) {
+            this.mode = configOrYOffset.mode || 'mirrorHorizontal';
+            this.mainWorld = configOrYOffset.mainWorld ? { ...configOrYOffset.mainWorld } : null;
+            this.shadowWorld = configOrYOffset.shadowWorld ? { ...configOrYOffset.shadowWorld } : null;
+            if (this.mainWorld && this.shadowWorld) this.yOffset = this.shadowWorld.y - this.mainWorld.y;
+        } else {
+            this.yOffset = configOrYOffset || 0;
+        }
         this.type = 'shadowPlayer';
+    }
+    resolveWorlds(levelData) {
+        if (this.mainWorld && this.shadowWorld) {
+            return {
+                main: { ...this.mainWorld },
+                shadow: { ...this.shadowWorld },
+            };
+        }
+        return getLevelWorlds(levelData);
+    }
+    syncFromPlayer(player, levelDataOverride) {
+        const levelData = levelDataOverride || game?.levelData || (this.mainWorld && this.shadowWorld ? {
+            levelType: 'shadow',
+            shadowMode: this.mode || 'mirrorHorizontal',
+            worlds: {
+                main: { ...this.mainWorld },
+                shadow: { ...this.shadowWorld },
+            },
+            currentShadowControlWorld: 'main',
+        } : null);
+        const worlds = this.resolveWorlds(levelData);
+        if (!worlds) {
+            const levelW = levelData?.width || W;
+            this.x = levelW - player.x - this.w;
+            this.y = player.y + this.yOffset;
+            return;
+        }
+
+        const controlWorld = getShadowControlWorld(levelData);
+        const passiveWorld = controlWorld === 'shadow' ? 'main' : 'shadow';
+        const mapped = mapShadowActorBetweenWorlds({ x: player.x, y: player.y, w: this.w, h: this.h }, controlWorld, passiveWorld, levelData);
+        if (mapped) {
+            this.x = mapped.x;
+            this.y = mapped.y;
+        }
     }
     update(player) {
         if (!player.alive) return;
-        const levelW = game.levelData.width || W;
-        // Horizontal komplett gespiegelt
-        this.x = levelW - player.x - this.w;
-        // Y mit Offset (Shadow-Welt befindet sich z.B. unterhalb)
-        this.y = player.y + this.yOffset;
+        this.syncFromPlayer(player);
 
         // Shadow tötet Spieler wenn er in Spikes läuft
         for (const s of game.levelData.spikes) {
@@ -1008,22 +1460,22 @@ class ShadowPlayer {
         }
     }
     draw() {
+        const mode = this.mode || game?.levelData?.shadowMode || 'mirrorHorizontal';
         ctx.globalAlpha = 0.65;
         ctx.fillStyle = '#6c5ce7';
         ctx.fillRect(this.x, this.y, this.w, this.h);
-        // Augen
+        if (mode === 'verticalFlip') {
+            ctx.fillStyle = 'rgba(223,230,255,0.7)';
+            ctx.fillRect(this.x + 3, this.y, this.w - 6, 3);
+        }
         ctx.fillStyle = '#fff';
-        ctx.fillRect(this.x + 4, this.y + 6, 3, 3);
-        ctx.fillRect(this.x + 13, this.y + 6, 3, 3);
+        const eyeY = mode === 'verticalFlip' ? this.y + this.h - 9 : this.y + 6;
+        ctx.fillRect(this.x + 4, eyeY, 3, 3);
+        ctx.fillRect(this.x + 13, eyeY, 3, 3);
         ctx.globalAlpha = 1;
     }
     reset() {
-        // Shadow direkt auf gespiegelte Startposition + Y-Offset setzen
-        if (game.levelData && game.player) {
-            const levelW = game.levelData.width || W;
-            this.x = levelW - game.player.x - this.w;
-            this.y = game.player.y + this.yOffset;
-        }
+        if (game.levelData && game.player) this.syncFromPlayer(game.player);
     }
 }
 
