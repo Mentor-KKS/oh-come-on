@@ -3,3 +3,5 @@
 !README.md
 node_modules/
 test-levels/
+js/editor/
+editor.html
