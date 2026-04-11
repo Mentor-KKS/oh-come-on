@@ -146,6 +146,7 @@ function drawPlatform(p) {
 
 const PLATFORM_SKIN_PRESETS = {
     default: { body:'#d0d0d0', top:'#e8e8e8' },
+    ceiling: { body:'#d0d0d0' },
     oneWay: { body:'rgba(205, 220, 255, 0.22)', top:'#dff1ff', border:'rgba(223,241,255,0.65)', detail:'dashes', detailColor:'rgba(223,241,255,0.55)' },
     moving: { body:'#b0d0f0', top:'#d0e8ff', detail:'dashes', detailColor:'rgba(255,255,255,0.5)' },
     toggle: { body:'#7f8c8d', top:'#bdc3c7', detail:'bolts', detailColor:'#dfe6e9' },

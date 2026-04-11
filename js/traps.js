@@ -2,11 +2,148 @@
 //  TRAP TYPES
 // ============================================================
 
+function getTrapDrawPriority(trap) {
+    if (!trap) return 0;
+    return Number.isFinite(trap.drawPriority) ? trap.drawPriority : 0;
+}
+
+function getOrderedTrapDrawList(traps, renderAfterSpikes = false) {
+    return (traps || [])
+        .map((trap, index) => ({ trap, index }))
+        .filter(entry =>
+            entry.trap &&
+            entry.trap.type !== 'darknessOverlay' &&
+            !!entry.trap.renderAfterSpikes === !!renderAfterSpikes
+        )
+        .sort((a, b) => {
+            const priorityDiff = getTrapDrawPriority(a.trap) - getTrapDrawPriority(b.trap);
+            return priorityDiff || (a.index - b.index);
+        })
+        .map(entry => entry.trap);
+}
+
+function getElementCenterPoint(ref) {
+    return {
+        x: (ref?.x ?? 0) + ((ref?.w ?? 0) / 2),
+        y: (ref?.y ?? 0) + ((ref?.h ?? 0) / 2),
+    };
+}
+
+function findLevelElementByDevId(levelData, devId) {
+    const wanted = String(devId || '').trim();
+    if (!wanted || !levelData) return null;
+    if (levelData.exit?.devId === wanted) return levelData.exit;
+    const pools = [levelData.platforms || [], levelData.spikes || [], levelData.traps || []];
+    for (const pool of pools) {
+        const match = pool.find(item => item && item.devId === wanted);
+        if (match) return match;
+    }
+    return null;
+}
+
+function getLinkedActionGroupMembers(levelData, target) {
+    const group = String(target?.actionGroup || '').trim();
+    if (!group || !levelData) return [];
+    const members = [];
+    const add = ref => {
+        if (!ref || ref === target) return;
+        if (String(ref.actionGroup || '').trim() !== group) return;
+        members.push(ref);
+    };
+    add(levelData.exit);
+    (levelData.platforms || []).forEach(add);
+    (levelData.spikes || []).forEach(add);
+    (levelData.traps || []).forEach(add);
+    return members;
+}
+
+function captureElementRectState(ref) {
+    return {
+        x: Number.isFinite(ref?.x) ? ref.x : undefined,
+        y: Number.isFinite(ref?.y) ? ref.y : undefined,
+        w: Number.isFinite(ref?.w) ? ref.w : undefined,
+        h: Number.isFinite(ref?.h) ? ref.h : undefined,
+        actionHidden: ref?.actionHidden === undefined ? undefined : !!ref.actionHidden,
+        actionDisabled: ref?.actionDisabled === undefined ? undefined : !!ref.actionDisabled,
+        actionSolid: ref?.actionSolid === undefined ? undefined : !!ref.actionSolid,
+    };
+}
+
+function applyActionTransformStep(target, step, progress, fromState) {
+    if (!target || !fromState) return;
+    const lerpValue = (fromValue, toValue) => fromValue + (toValue - fromValue) * progress;
+    if (Number.isFinite(step.x) && Number.isFinite(fromState.x)) target.x = lerpValue(fromState.x, step.x);
+    if (Number.isFinite(step.y) && Number.isFinite(fromState.y)) target.y = lerpValue(fromState.y, step.y);
+    if (Number.isFinite(step.w) && Number.isFinite(fromState.w)) target.w = lerpValue(fromState.w, step.w);
+    if (Number.isFinite(step.h) && Number.isFinite(fromState.h)) target.h = lerpValue(fromState.h, step.h);
+}
+
+function restoreActionTargetState(target, state) {
+    if (!target || !state) return;
+    if (Number.isFinite(state.x)) target.x = state.x;
+    if (Number.isFinite(state.y)) target.y = state.y;
+    if (Number.isFinite(state.w)) target.w = state.w;
+    if (Number.isFinite(state.h)) target.h = state.h;
+    if (state.actionHidden === undefined) delete target.actionHidden;
+    else target.actionHidden = !!state.actionHidden;
+    if (state.actionDisabled === undefined) delete target.actionDisabled;
+    else target.actionDisabled = !!state.actionDisabled;
+    if (state.actionSolid === undefined) delete target.actionSolid;
+    else target.actionSolid = !!state.actionSolid;
+}
+
+function applyActionMovePlayerInteraction(player, target, dx, dy, linkedMembers, levelData) {
+    if (!player || !player.alive || !target) return;
+    if (dx === 0 && dy === 0) return;
+    if (!isActionElementSolid(target)) return;
+    const playerOverlap = aabb(player, target);
+    const playerOnTop =
+        player.x + player.w > target.x &&
+        player.x < target.x + target.w &&
+        Math.abs((player.y + player.h) - target.y) < 6;
+    if (!playerOverlap && !playerOnTop) return;
+    player.x += dx;
+    player.y += dy;
+    const linkedSet = new Set([target].concat(Array.isArray(linkedMembers) ? linkedMembers : []));
+    let crushed = false;
+    if (levelData) {
+        const platforms = levelData.platforms || [];
+        for (const p of platforms) {
+            if (!p || linkedSet.has(p)) continue;
+            if (isActionElementHidden(p) || !isActionElementSolid(p)) continue;
+            if (aabb(player, p)) { crushed = true; break; }
+        }
+        if (!crushed && Number.isFinite(levelData.width) && Number.isFinite(levelData.height)) {
+            if (player.x < 0 || player.x + player.w > levelData.width ||
+                player.y < 0 || player.y + player.h > levelData.height) {
+                crushed = true;
+            }
+        }
+    }
+    if (crushed && typeof player.die === 'function') player.die();
+}
+
+function isActionElementHidden(ref) {
+    return !!ref?.actionHidden;
+}
+
+function isActionElementDisabled(ref) {
+    return !!ref?.actionDisabled;
+}
+
+function isActionElementSolid(ref) {
+    if (!ref || isActionElementHidden(ref) || isActionElementDisabled(ref)) return false;
+    if (ref.actionSolid !== undefined) return !!ref.actionSolid;
+    if (ref.solid !== undefined) return ref.solid !== false;
+    return true;
+}
+
 class FallingFloor {
-    constructor(x, y, w, h) {
+    constructor(x, y, w, h, triggerDelay = 75) {
         this.x = x; this.y = y; this.w = w; this.h = h || 20;
         this.solid = true;
         this.origY = y;
+        this.triggerDelay = Math.max(0, triggerDelay ?? 75);
         this.triggered = false;
         this.shakeTimer = 0;
         this.falling = false;
@@ -19,7 +156,7 @@ class FallingFloor {
                 player.x + player.w > this.x && player.x < this.x + this.w &&
                 Math.abs((player.y + player.h) - this.y) < 3) {
                 this.triggered = true;
-                this.shakeTimer = 75;
+                this.shakeTimer = this.triggerDelay;
                 SFX.trapTrigger();
             }
         }
@@ -37,8 +174,7 @@ class FallingFloor {
         if (this.y > H + 50) return;
         let dx = 0;
         if (this.triggered && !this.falling) dx = rand(-2, 2);
-        rect(this.x + dx, this.y, this.w, this.h, '#d0d0d0');
-        rect(this.x + dx, this.y, this.w, 3, '#e8e8e8');
+        drawPlatform({ x:this.x + dx, y:this.y, w:this.w, h:this.h, skin:this.skin || 'default' });
     }
     reset() {
         this.y = this.origY;
@@ -231,7 +367,61 @@ class FakeFloor {
     constructor(x, y, w, h) {
         this.x = x; this.y = y; this.w = w; this.h = h || 20;
         this.solid = false;
+        this.renderAfterSpikes = true;
+        this.triggered = false;
+        this.timer = 0;
+        this.alpha = 1;
         this.type = 'fakeFloor';
+    }
+    update(player) {
+        if (!this.triggered && player?.alive) {
+            const gDir = player.gDir || 1;
+            const prevTop = player.prevY ?? player.y;
+            const prevBottom = (player.prevY ?? player.y) + player.h;
+            const currTop = player.y;
+            const currBottom = player.y + player.h;
+            const overlapX = player.x + player.w > this.x && player.x < this.x + this.w;
+            const enteredBody = player.y < this.y + this.h && currBottom > this.y;
+            const movingIntoIt = gDir > 0 ? currBottom > prevBottom : currTop < prevTop;
+            const crossedFakeFace = gDir > 0
+                ? prevBottom <= this.y + 6 && currBottom >= this.y + 4
+                : prevTop >= this.y + this.h - 6 && currTop <= this.y + this.h - 4;
+            if (overlapX && movingIntoIt && (crossedFakeFace || enteredBody)) {
+                this.triggered = true;
+                this.timer = 0;
+                SFX.trapTrigger();
+                spawnParticles(this.x + this.w / 2, this.y + this.h / 2, Math.max(8, Math.floor(this.w / 10)), '#d0d0d0');
+            }
+        }
+        if (this.triggered && this.alpha > 0) {
+            this.timer++;
+            if (this.timer > 2) this.alpha = Math.max(0, this.alpha - 0.16);
+        }
+    }
+    draw() {
+        if (this.alpha <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        const dx = this.triggered && this.timer <= 5 ? rand(-1.2, 1.2) : 0;
+        const coverDepth = 6;
+        rect(this.x + dx, this.y, this.w, this.h, '#d0d0d0');
+        rect(this.x + dx, this.y + this.h - 1, this.w, coverDepth, '#d0d0d0');
+        rect(this.x + dx, this.y, this.w, 3, '#e8e8e8');
+        ctx.restore();
+    }
+    reset() {
+        this.triggered = false;
+        this.timer = 0;
+        this.alpha = 1;
+    }
+}
+
+class FakeWall {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w || 20; this.h = h || 140;
+        this.solid = false;
+        this.renderAfterSpikes = true;
+        this.type = 'fakeWall';
     }
     update() {}
     draw() {
@@ -709,6 +899,7 @@ class RisingDeath {
         this.timer = 0;
         this.speed = speed || 0.3;
         this.type = 'risingDeath';
+        this.drawPriority = 100;
     }
     update(player) {
         this.timer++;
@@ -745,6 +936,7 @@ class ChasingWall {
         this.startDelay = startDelay || 90;
         this.timer = 0;
         this.type = 'chasingWall';
+        this.drawPriority = 100;
     }
     update(player) {
         this.timer++;
@@ -972,31 +1164,368 @@ class DoubleJumpZone {
 }
 
 // Camera Trigger - schaltet Kamera-Verhalten um, sobald der Spieler den Bereich betritt
+function playerOverlapsRect(player, rect) {
+    if (!player || !rect) return false;
+    return player.x < rect.x + rect.w &&
+        player.x + player.w > rect.x &&
+        player.y < rect.y + rect.h &&
+        player.y + player.h > rect.y;
+}
+
+function isSameCameraRoomState(a, b) {
+    return !!a && !!b &&
+        a.x === b.x &&
+        a.y === b.y &&
+        a.w === b.w &&
+        a.h === b.h &&
+        (a.fitMode || 'native') === (b.fitMode || 'native');
+}
+
+function applyCameraTriggerState(levelData, trigger, player) {
+    if (!levelData || !trigger) return;
+    trigger.triggered = true;
+    levelData.currentCameraTrigger = trigger;
+    levelData.currentCameraRoom = null;
+    resetDynamicWorldState(levelData);
+    if (player) player.gDir = levelData.currentGravityDir;
+    levelData.currentVerticalScroll = !!trigger.verticalScroll;
+    if (Number.isFinite(trigger.cameraAnchorX)) levelData.currentCameraAnchorX = Math.max(0, Math.min(1, trigger.cameraAnchorX));
+    if (Number.isFinite(trigger.cameraAnchorY)) levelData.currentCameraAnchorY = Math.max(0, Math.min(1, trigger.cameraAnchorY));
+    levelData.currentCameraMinX = Number.isFinite(trigger.cameraMinX) ? Math.max(0, trigger.cameraMinX) : 0;
+    levelData.currentCameraLerp = Number.isFinite(trigger.cameraTransitionSpeed) ? Math.max(0.01, Math.min(1, trigger.cameraTransitionSpeed)) : 0.08;
+}
+
+function applyCameraRoomState(levelData, roomSource, player) {
+    if (!levelData || !roomSource) return;
+    levelData.currentCameraTrigger = null;
+    levelData.currentCameraRoom = {
+        x: roomSource.x,
+        y: roomSource.y,
+        w: roomSource.w,
+        h: roomSource.h,
+        fitMode: roomSource.fitMode || 'native',
+    };
+    levelData.currentVerticalScroll = false;
+    applyDynamicWorldOverrides(levelData, roomSource);
+    if (player) player.gDir = levelData.currentGravityDir;
+}
+
+function initializeCameraZonesForPlayer(levelData, player) {
+    if (!levelData || !player || !Array.isArray(levelData.traps)) return;
+    let activeTrigger = null;
+    let activeRoom = null;
+    for (const trap of levelData.traps) {
+        if (trap?.type === 'cameraTrigger' && playerOverlapsRect(player, trap)) {
+            activeTrigger = trap;
+        } else if (trap?.type === 'cameraRoom' && playerOverlapsRect(player, trap)) {
+            activeRoom = trap;
+        }
+    }
+    if (activeTrigger) {
+        applyCameraTriggerState(levelData, activeTrigger, player);
+    } else if (activeRoom) {
+        applyCameraRoomState(levelData, activeRoom, player);
+    }
+}
+
 class CameraTrigger {
     constructor(x, y, w, h, verticalScroll, cameraAnchorX, cameraAnchorY) {
         this.x = x; this.y = y; this.w = w; this.h = h;
         this.verticalScroll = verticalScroll !== undefined ? !!verticalScroll : true;
         this.cameraAnchorX = Number.isFinite(cameraAnchorX) ? Math.max(0, Math.min(1, cameraAnchorX)) : undefined;
         this.cameraAnchorY = Number.isFinite(cameraAnchorY) ? Math.max(0, Math.min(1, cameraAnchorY)) : undefined;
+        this.cameraMinX = undefined;
+        this.cameraTransitionSpeed = undefined;
         this.triggered = false;
         this.type = 'cameraTrigger';
     }
     update(player) {
-        if (this.triggered || !player.alive || !game.levelData) return;
-        const px = player.x + player.w / 2;
-        const py = player.y + player.h / 2;
-        if (px < this.x || px > this.x + this.w || py < this.y || py > this.y + this.h) return;
-        this.triggered = true;
-        game.levelData.currentCameraRoom = null;
-        resetDynamicWorldState(game.levelData);
-        if (player) player.gDir = game.levelData.currentGravityDir;
-        game.levelData.currentVerticalScroll = !!this.verticalScroll;
-        if (Number.isFinite(this.cameraAnchorX)) game.levelData.currentCameraAnchorX = Math.max(0, Math.min(1, this.cameraAnchorX));
-        if (Number.isFinite(this.cameraAnchorY)) game.levelData.currentCameraAnchorY = Math.max(0, Math.min(1, this.cameraAnchorY));
+        if (!player.alive || !game.levelData) return;
+        const overlaps = playerOverlapsRect(player, this);
+        if (!overlaps) {
+            if (game.levelData.currentCameraTrigger === this) game.levelData.currentCameraTrigger = null;
+            this.triggered = false;
+            return;
+        }
+        applyCameraTriggerState(game.levelData, this, player);
     }
     draw() {}
     reset() {
         this.triggered = false;
+    }
+}
+
+class ActionTrigger {
+    constructor(x, y, w, h, actions) {
+        this.x = x; this.y = y;
+        this.w = Number.isFinite(w) ? w : 140;
+        this.h = Number.isFinite(h) ? h : 100;
+        this.actions = Array.isArray(actions) ? JSON.parse(JSON.stringify(actions)) : [];
+        this.mode = 'once';
+        this.triggered = false;
+        this.completed = false;
+        this.active = false;
+        this.inside = false;
+        this.runDirection = 'forward';
+        this.currentActionIndex = 0;
+        this.activeContexts = [];
+        this.baselineMap = new Map();
+        this.type = 'actionTrigger';
+    }
+    getActionTargetBaseline(target) {
+        if (!target) return null;
+        if (!this.baselineMap.has(target)) this.baselineMap.set(target, captureElementRectState(target));
+        return this.baselineMap.get(target);
+    }
+    restoreBaselineTargets() {
+        if (!(this.baselineMap instanceof Map) || this.baselineMap.size === 0) return;
+        this.baselineMap.forEach((baseline, target) => {
+            restoreActionTargetState(target, baseline);
+        });
+    }
+    startRun(direction = 'forward') {
+        this.triggered = true;
+        this.runDirection = direction === 'reverse' ? 'reverse' : 'forward';
+        this.currentActionIndex = 0;
+        this.activeContexts = [];
+        if (this.runDirection === 'forward') this.completed = false;
+    }
+    finishRun() {
+        if (this.runDirection === 'forward') {
+            this.active = true;
+            if (this.mode === 'once') this.completed = true;
+        } else {
+            this.active = false;
+        }
+        this.triggered = false;
+        this.activeContexts = [];
+        this.currentActionIndex = 0;
+        if (this.mode === 'repeat' && this.inside) {
+            this.startRun(this.runDirection === 'forward' ? 'reverse' : 'forward');
+        }
+    }
+    update(player) {
+        if (!game?.levelData) return;
+        const overlaps = !!(player?.alive && aabb(player, this));
+        const entered = overlaps && !this.inside;
+        const exited = !overlaps && this.inside;
+        this.inside = overlaps;
+
+        if (this.mode === 'once') {
+            if (entered && !this.completed && !this.triggered) this.startRun('forward');
+        } else if (this.mode === 'toggle') {
+            if (entered && !this.triggered) this.startRun(this.active ? 'reverse' : 'forward');
+        } else if (this.mode === 'enterLeave' || this.mode === 'whileInside') {
+            if (entered) {
+                if (this.triggered && this.runDirection === 'reverse') this.startRun('forward');
+                else if (!this.triggered && !this.active) this.startRun('forward');
+            }
+            if (exited) {
+                if (this.triggered && this.runDirection === 'forward') this.startRun('reverse');
+                else if (!this.triggered && this.active) this.startRun('reverse');
+            }
+        } else if (this.mode === 'repeat') {
+            if (entered && !this.triggered && !this.active) this.startRun('forward');
+            if (exited && this.triggered && this.runDirection === 'forward') this.startRun('reverse');
+            else if (exited && !this.triggered && this.active) this.startRun('reverse');
+        }
+
+        if (!this.triggered) return;
+
+        // 1. Advance all currently running contexts (parallel or otherwise)
+        if (!Array.isArray(this.activeContexts)) this.activeContexts = [];
+        for (let i = this.activeContexts.length - 1; i >= 0; i--) {
+            const done = this.updateActiveContext(this.activeContexts[i], player);
+            if (done) this.activeContexts.splice(i, 1);
+        }
+
+        // 2. Start as many new steps as allowed (sequential waits for empty queue, parallel fires immediately)
+        let safety = 256;
+        while (this.currentActionIndex < this.actions.length && safety-- > 0) {
+            const action = this.actions[this.currentActionIndex];
+            const startMode = action?.startMode === 'parallel' ? 'parallel' : 'sequential';
+            if (startMode !== 'parallel' && this.activeContexts.length > 0) break;
+            const ctx = this.startActionStep(action, player);
+            this.currentActionIndex++;
+            if (ctx) this.activeContexts.push(ctx);
+        }
+
+        // 3. All done?
+        if (this.activeContexts.length === 0 && this.currentActionIndex >= this.actions.length) {
+            this.finishRun();
+        }
+    }
+    startActionStep(action, player) {
+        if (!action || !action.type || action.type === 'none') return null;
+
+        if (action.type === 'wait') {
+            return {
+                kind: 'wait',
+                duration: Math.max(1, Math.round(action.duration ?? 20)),
+                frame: 0,
+            };
+        }
+
+        if (action.type === 'transform') {
+            const target = findLevelElementByDevId(game.levelData, action.targetId);
+            if (!target) return null;
+            const linkedMembers = getLinkedActionGroupMembers(game.levelData, target);
+            const targetBaseline = this.getActionTargetBaseline(target);
+            linkedMembers.forEach(member => this.getActionTargetBaseline(member));
+            return {
+                kind: 'transform',
+                action,
+                target,
+                linkedMembers,
+                duration: Math.max(1, Math.round(action.duration ?? 20)),
+                frame: 0,
+                from: captureElementRectState(target),
+                baseline: targetBaseline,
+                linkedFrom: linkedMembers.map(member => ({ ref: member, from: captureElementRectState(member) })),
+            };
+        }
+
+        if (action.type === 'move') {
+            const target = findLevelElementByDevId(game.levelData, action.targetId);
+            if (!target) return null;
+            const linkedMembers = getLinkedActionGroupMembers(game.levelData, target);
+            const targetBaseline = this.getActionTargetBaseline(target);
+            linkedMembers.forEach(member => this.getActionTargetBaseline(member));
+            const from = captureElementRectState(target);
+            const reverse = this.runDirection === 'reverse';
+            const toX = reverse
+                ? (Number.isFinite(action.x) ? targetBaseline?.x : from.x)
+                : (Number.isFinite(action.x) ? action.x : from.x);
+            const toY = reverse
+                ? (Number.isFinite(action.y) ? targetBaseline?.y : from.y)
+                : (Number.isFinite(action.y) ? action.y : from.y);
+            const speed = Math.max(0.1, Number.isFinite(+action.speed) ? +action.speed : 4);
+            const distance = Math.hypot((toX ?? from.x ?? 0) - (from.x ?? 0), (toY ?? from.y ?? 0) - (from.y ?? 0));
+            const duration = Math.max(1, Math.round(distance / speed));
+            return {
+                kind: 'move',
+                target,
+                linkedMembers,
+                duration,
+                frame: 0,
+                from,
+                toX,
+                toY,
+                linkedFrom: linkedMembers.map(member => ({ ref: member, from: captureElementRectState(member) })),
+            };
+        }
+
+        if (action.type === 'showHide' || action.type === 'enableDisable' || action.type === 'setSolid') {
+            const target = findLevelElementByDevId(game.levelData, action.targetId);
+            if (!target) return null;
+            const linkedMembers = getLinkedActionGroupMembers(game.levelData, target);
+            const allTargets = [target, ...linkedMembers];
+            allTargets.forEach(t => this.getActionTargetBaseline(t));
+            const reverse = this.runDirection === 'reverse';
+            for (const t of allTargets) {
+                const baseline = this.baselineMap.get(t);
+                if (action.type === 'showHide') {
+                    if (reverse) {
+                        if (baseline?.actionHidden === undefined) delete t.actionHidden;
+                        else t.actionHidden = !!baseline.actionHidden;
+                    } else {
+                        t.actionHidden = (action.visibility || 'show') === 'hide';
+                    }
+                } else if (action.type === 'enableDisable') {
+                    if (reverse) {
+                        if (baseline?.actionDisabled === undefined) delete t.actionDisabled;
+                        else t.actionDisabled = !!baseline.actionDisabled;
+                    } else {
+                        t.actionDisabled = (action.enabledState || 'enable') === 'disable';
+                    }
+                } else {
+                    if (reverse) {
+                        if (baseline?.actionSolid === undefined) delete t.actionSolid;
+                        else t.actionSolid = !!baseline.actionSolid;
+                    } else {
+                        t.actionSolid = (action.solidState || 'solid') === 'solid';
+                    }
+                }
+            }
+            return null; // instant
+        }
+
+        return null;
+    }
+    updateActiveContext(ctx, player) {
+        if (!ctx) return true;
+
+        if (ctx.kind === 'wait') {
+            ctx.frame++;
+            return ctx.frame >= ctx.duration;
+        }
+
+        if (ctx.kind === 'transform') {
+            ctx.frame++;
+            const progress = Math.min(1, ctx.frame / ctx.duration);
+            const target = ctx.target;
+            const action = ctx.action;
+            const prevState = captureElementRectState(target);
+            const reverse = this.runDirection === 'reverse';
+            const toState = reverse
+                ? {
+                    x: Number.isFinite(action.x) ? ctx.baseline?.x : ctx.from.x,
+                    y: Number.isFinite(action.y) ? ctx.baseline?.y : ctx.from.y,
+                    w: Number.isFinite(action.w) ? ctx.baseline?.w : ctx.from.w,
+                    h: Number.isFinite(action.h) ? ctx.baseline?.h : ctx.from.h,
+                }
+                : {
+                    x: Number.isFinite(action.x) ? action.x : ctx.from.x,
+                    y: Number.isFinite(action.y) ? action.y : ctx.from.y,
+                    w: Number.isFinite(action.w) ? action.w : ctx.from.w,
+                    h: Number.isFinite(action.h) ? action.h : ctx.from.h,
+                };
+            applyActionTransformStep(target, toState, progress, ctx.from);
+            const dx = (target.x ?? prevState.x ?? 0) - (prevState.x ?? target.x ?? 0);
+            const dy = (target.y ?? prevState.y ?? 0) - (prevState.y ?? target.y ?? 0);
+            if ((dx !== 0 || dy !== 0) && Array.isArray(ctx.linkedFrom)) {
+                ctx.linkedFrom.forEach(entry => {
+                    if (!entry?.ref || entry.ref === target) return;
+                    if (Number.isFinite(entry.from.x)) entry.ref.x = entry.from.x + ((target.x ?? 0) - (ctx.from.x ?? 0));
+                    if (Number.isFinite(entry.from.y)) entry.ref.y = entry.from.y + ((target.y ?? 0) - (ctx.from.y ?? 0));
+                });
+            }
+            return progress >= 1;
+        }
+
+        if (ctx.kind === 'move') {
+            ctx.frame++;
+            const progress = Math.min(1, ctx.frame / ctx.duration);
+            const target = ctx.target;
+            const prevState = captureElementRectState(target);
+            applyActionTransformStep(target, { x: ctx.toX, y: ctx.toY }, progress, ctx.from);
+            const dx = (target.x ?? prevState.x ?? 0) - (prevState.x ?? target.x ?? 0);
+            const dy = (target.y ?? prevState.y ?? 0) - (prevState.y ?? target.y ?? 0);
+            if ((dx !== 0 || dy !== 0) && Array.isArray(ctx.linkedFrom)) {
+                ctx.linkedFrom.forEach(entry => {
+                    if (!entry?.ref || entry.ref === target) return;
+                    if (Number.isFinite(entry.from.x)) entry.ref.x = entry.from.x + ((target.x ?? 0) - (ctx.from.x ?? 0));
+                    if (Number.isFinite(entry.from.y)) entry.ref.y = entry.from.y + ((target.y ?? 0) - (ctx.from.y ?? 0));
+                });
+            }
+            applyActionMovePlayerInteraction(player, target, dx, dy, ctx.linkedMembers, game?.levelData);
+            return progress >= 1;
+        }
+
+        return true;
+    }
+    draw() {}
+    reset() {
+        this.restoreBaselineTargets();
+        this.mode = this.mode || 'once';
+        this.triggered = false;
+        this.completed = false;
+        this.active = false;
+        this.inside = false;
+        this.runDirection = 'forward';
+        this.currentActionIndex = 0;
+        this.activeContexts = [];
+        this.baselineMap = new Map();
     }
 }
 
@@ -1017,21 +1546,24 @@ class CameraRoom {
     }
     update(player) {
         if (!player.alive || !game.levelData) return;
-        const px = player.x + player.w / 2;
-        const py = player.y + player.h / 2;
-        if (px < this.x || px > this.x + this.w || py < this.y || py > this.y + this.h) return;
+        if (game.levelData.currentCameraTrigger) return;
         const room = game.levelData.currentCameraRoom;
-        if (!room || room.x !== this.x || room.y !== this.y || room.w !== this.w || room.h !== this.h || room.fitMode !== this.fitMode) {
-            game.levelData.currentCameraRoom = { x: this.x, y: this.y, w: this.w, h: this.h, fitMode: this.fitMode || 'native' };
-            game.levelData.currentVerticalScroll = false;
-            applyDynamicWorldOverrides(game.levelData, this);
+        const roomState = { x: this.x, y: this.y, w: this.w, h: this.h, fitMode: this.fitMode || 'native' };
+        const overlaps = playerOverlapsRect(player, this);
+        if (isSameCameraRoomState(room, roomState) && !overlaps) {
+            game.levelData.currentCameraRoom = null;
+            game.levelData.currentVerticalScroll = !!game.levelData.verticalScroll;
+            game.levelData.currentCameraAnchorX = Number.isFinite(game.levelData.cameraAnchorX) ? Math.max(0, Math.min(1, game.levelData.cameraAnchorX)) : 0.5;
+            game.levelData.currentCameraAnchorY = Number.isFinite(game.levelData.cameraAnchorY) ? Math.max(0, Math.min(1, game.levelData.cameraAnchorY)) : 0.5;
+            game.levelData.currentCameraMinX = game.levelData.cameraMinX || 0;
+            game.levelData.currentCameraLerp = 0.08;
+            resetDynamicWorldState(game.levelData);
             if (player) player.gDir = game.levelData.currentGravityDir;
-            if (game) {
-                game.pendingCameraSnap = true;
-                if (typeof snapCameraToPlayerImmediate === 'function') {
-                    snapCameraToPlayerImmediate(game, game.levelData, player);
-                }
-            }
+            return;
+        }
+        if (!overlaps) return;
+        if (!isSameCameraRoomState(room, roomState)) {
+            applyCameraRoomState(game.levelData, this, player);
         }
     }
     draw() {}
@@ -1577,11 +2109,14 @@ class TimedFloor {
 // Dodging Platform — zuckt weg wenn Spieler in der Luft nah kommt
 // Kommt nach kurzer Zeit zurück. Dodgt nur EINMAL.
 class DodgingPlatform {
-    constructor(x, y, w, h, dodgeX, triggerRange) {
+    constructor(x, y, w, h, dodgeX, triggerRange, triggerOffsetY, triggerHeight, dodgeSpeed) {
         this.origX = x; this.x = x; this.y = y;
         this.w = w; this.h = h || 20;
         this.dodgeX = dodgeX;
         this.triggerRange = triggerRange || 80;
+        this.triggerOffsetY = Math.max(0, triggerOffsetY ?? 80);
+        this.triggerHeight = Math.max(10, triggerHeight ?? 80);
+        this.dodgeSpeed = Math.max(0.1, dodgeSpeed ?? 5);
         this.solid = true;
         this.state = 'idle';
         this.dodged = false;
@@ -1591,13 +2126,15 @@ class DodgingPlatform {
     }
     update(player) {
         if (this.state === 'idle' && !this.dodged && player.alive) {
-            const px = player.x + player.w / 2;
-            const py = player.y + player.h;
             const cx = this.x + this.w / 2;
-            const inRange = Math.abs(px - cx) < this.triggerRange;
-            const abovePlatform = !player.grounded && py < this.y + 40;
-            const landedOnIt = player.grounded && py <= this.y + 3 && player.x + player.w > this.x && player.x < this.x + this.w;
-            if (inRange && (abovePlatform || landedOnIt)) {
+            const triggerTop = this.y - this.triggerOffsetY;
+            const triggerRect = {
+                x: cx - this.triggerRange,
+                y: triggerTop,
+                w: this.triggerRange * 2,
+                h: this.triggerHeight,
+            };
+            if (aabb(player, triggerRect)) {
                 this.state = 'dodging';
                 this.targetX = this.dodgeX;
             }
@@ -1605,7 +2142,7 @@ class DodgingPlatform {
         if (this.state === 'dodging') {
             // Konstante Geschwindigkeit — smooth sichtbares Wegrutschen
             const dir = this.targetX > this.x ? 1 : -1;
-            this.x += dir * 5;
+            this.x += dir * this.dodgeSpeed;
             if ((dir > 0 && this.x >= this.targetX) || (dir < 0 && this.x <= this.targetX)) {
                 this.x = this.targetX;
                 this.state = 'waiting';
@@ -1622,7 +2159,7 @@ class DodgingPlatform {
         if (this.state === 'returning') {
             // Langsam zurückkommen
             const dir = this.targetX > this.x ? 1 : -1;
-            this.x += dir * 2;
+            this.x += dir * Math.max(1, this.dodgeSpeed * 0.4);
             if ((dir > 0 && this.x >= this.targetX) || (dir < 0 && this.x <= this.targetX)) {
                 this.x = this.targetX;
                 this.state = 'idle';

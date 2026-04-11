@@ -21,9 +21,24 @@ function deserializeCommunityTrap(td) {
             ? { ...td, type: 'revealPlatform' }
             : td;
     switch (t.type) {
-        case 'fallingFloor': return new FallingFloor(t.x, t.y, t.w, t.h);
+        case 'fallingFloor': {
+            const trap = new FallingFloor(t.x, t.y, t.w, t.h, t.triggerDelay ?? 75);
+            if (t.skin) trap.skin = t.skin;
+            return trap;
+        }
         case 'fakeFloor': return new FakeFloor(t.x, t.y, t.w, t.h);
-        case 'dodgingPlatform': return new DodgingPlatform(t.x, t.y, t.w, t.h, t.dodgeX ?? (t.x + 100), t.triggerRange ?? 80);
+        case 'fakeWall': return new FakeWall(t.x, t.y, t.w, t.h);
+        case 'dodgingPlatform': return new DodgingPlatform(
+            t.x,
+            t.y,
+            t.w,
+            t.h,
+            t.dodgeX ?? (t.x + 100),
+            t.triggerRange ?? 80,
+            t.triggerOffsetY ?? 80,
+            t.triggerHeight ?? 80,
+            t.dodgeSpeed ?? 5
+        );
         case 'trollShaker': return new TrollShaker(t.x, t.y, t.w, t.h);
         case 'timedFloor': return new TimedFloor(t.x, t.y, t.w, t.h, t.delay ?? 120);
         case 'togglePlatform': {
@@ -101,7 +116,17 @@ function deserializeCommunityTrap(td) {
         case 'iceZone': return new IceZone(t.x, t.y, t.w ?? 150, t.h ?? 50);
         case 'windZone': return new WindZone(t.x, t.y, t.w ?? 100, t.h ?? 100, t.force ?? t.vx ?? 0, t.forceY ?? t.vy ?? 0);
         case 'doubleJumpZone': return new DoubleJumpZone(t.x, t.y, t.w ?? 140, t.h ?? 100);
-        case 'cameraTrigger': return new CameraTrigger(t.x, t.y, t.w ?? 140, t.h ?? 120, t.verticalScroll ?? true, t.cameraAnchorX, t.cameraAnchorY);
+        case 'actionTrigger': {
+            const trap = new ActionTrigger(t.x, t.y, t.w ?? 140, t.h ?? 100, clonePlain(t.actions ?? []));
+            if (t.mode) trap.mode = t.mode;
+            return trap;
+        }
+        case 'cameraTrigger': {
+            const trap = new CameraTrigger(t.x, t.y, t.w ?? 140, t.h ?? 120, t.verticalScroll ?? true, t.cameraAnchorX, t.cameraAnchorY);
+            if (t.cameraMinX !== undefined) trap.cameraMinX = t.cameraMinX;
+            if (t.cameraTransitionSpeed !== undefined) trap.cameraTransitionSpeed = t.cameraTransitionSpeed;
+            return trap;
+        }
         case 'cameraRoom': {
             const trap = new CameraRoom(t.x, t.y, t.w, t.h, t.fitMode || 'native');
             if (t.gravityDir !== undefined) trap.gravityDir = t.gravityDir;
@@ -180,6 +205,9 @@ function resetCameraState(levelData) {
     levelData.currentVerticalScroll = !!levelData.verticalScroll;
     levelData.currentCameraAnchorX = Number.isFinite(levelData.cameraAnchorX) ? Math.max(0, Math.min(1, levelData.cameraAnchorX)) : 0.5;
     levelData.currentCameraAnchorY = Number.isFinite(levelData.cameraAnchorY) ? Math.max(0, Math.min(1, levelData.cameraAnchorY)) : 0.5;
+    levelData.currentCameraMinX = levelData.cameraMinX || 0;
+    levelData.currentCameraLerp = 0.08;
+    levelData.currentCameraTrigger = null;
     levelData.currentCameraRoom = null;
     if (typeof resetShadowWorldState === 'function') resetShadowWorldState(levelData);
     if (typeof resetDynamicWorldState === 'function') resetDynamicWorldState(levelData);
@@ -227,6 +255,17 @@ function getCameraAnchor(levelData, axis) {
     return Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : fallback;
 }
 
+function getCameraMinX(levelData) {
+    if (!levelData) return 0;
+    return Number.isFinite(levelData.currentCameraMinX) ? Math.max(0, levelData.currentCameraMinX) : Math.max(0, levelData.cameraMinX || 0);
+}
+
+function getCameraLerp(levelData) {
+    if (!levelData) return 0.08;
+    const raw = Number.isFinite(levelData.currentCameraLerp) ? levelData.currentCameraLerp : 0.08;
+    return Math.max(0.01, Math.min(1, raw));
+}
+
 function snapCameraToPlayerImmediate(gameObj, levelData, player) {
     if (!gameObj || !levelData || !player) return;
     const room = getCurrentCameraRoom(levelData);
@@ -239,7 +278,7 @@ function snapCameraToPlayerImmediate(gameObj, levelData, player) {
     const zoom = getLevelZoom(levelData);
     const visibleW = W / zoom;
     const visibleH = H / zoom;
-    const camMin = levelData.cameraMinX || 0;
+    const camMin = getCameraMinX(levelData);
     if (levelData.autoScroll) {
         gameObj.cameraX = Math.max(camMin, Math.min(player.x - visibleW * getCameraAnchor(levelData, 'x'), lvlW - visibleW));
     } else if (lvlW > visibleW) {
@@ -284,6 +323,9 @@ const game = {
     selectedLevel: 0,
     selectedPhase: 0,
     navCooldown: 0,
+    // Community browser
+    selectedCommunityLevel: 0,
+    communityLevelIndex: -1,
     // Speedrun
     speedrunMode: false,
     speedrunOption: 0,   // 0=OFF, 1=Phase1, 2=Phase2, ..., last=Hardcore
@@ -469,7 +511,9 @@ const game = {
         this.speedrunFinalTime = 0;
         this.closeSharedLevelOverlay(false);
         resetExitRevealState(lvl);
+        lvl.traps.forEach(t => t.reset());
         resetCameraState(lvl);
+        if (typeof initializeCameraZonesForPlayer === 'function') initializeCameraZonesForPlayer(lvl, this.player);
         this.pendingCameraSnap = false;
         if (!SFX.bgPlaying) SFX.startMusic();
 
@@ -477,7 +521,7 @@ const game = {
         const zoom = getLevelZoom(lvl);
         const visibleW = W / zoom;
         const visibleH = H / zoom;
-        const camMin = lvl.cameraMinX || 0;
+        const camMin = getCameraMinX(lvl);
         this.cameraX = Math.max(camMin, Math.min(this.player.x - visibleW * getCameraAnchor(lvl, 'x'), lvlW - visibleW));
 
         if (getCameraVerticalScroll(lvl)) {
@@ -486,8 +530,7 @@ const game = {
         } else {
             this.cameraY = 0;
         }
-
-        lvl.traps.forEach(t => t.reset());
+        if (typeof snapCameraToPlayerImmediate === 'function') snapCameraToPlayerImmediate(this, lvl, this.player);
     },
 
     executeMenuItem(index) {
@@ -524,20 +567,29 @@ const game = {
             case 4: // SHARED LEVEL
                 this.promptAndStartSharedLevel();
                 break;
-            case 5: // EDITOR
+            case 5: // COMMUNITY
+                this.state = 'community';
+                this.selectedCommunityLevel = Math.max(0, Math.min(this.selectedCommunityLevel || 0, (typeof COMMUNITY_LEVELS !== 'undefined' ? COMMUNITY_LEVELS.length - 1 : 0)));
+                break;
+            case 6: // EDITOR
                 window.open('community-editor.html', '_blank');
                 break;
-            case 6: // OPTIONS
+            case 7: // OPTIONS
                 this.state = 'settings';
-                break;
-            case 7: // SOUND
-                SFX.setMuted(!SFX.muted);
                 break;
         }
     },
 
     promptAndStartSharedLevel() {
         this.setSharedLevelOverlayOpen(true);
+    },
+
+    startCommunityLevel(index) {
+        if (typeof COMMUNITY_LEVELS === 'undefined') return;
+        if (index < 0 || index >= COMMUNITY_LEVELS.length) return;
+        const source = COMMUNITY_LEVELS[index];
+        this.startSharedLevel(source);
+        this.communityLevelIndex = index;
     },
 
     startLevel(idx) {
@@ -551,7 +603,9 @@ const game = {
         this.sharedLevelMode = false;
         this.sharedLevelCode = '';
         this.closeSharedLevelOverlay(false);
+        lvl.traps.forEach(t => t.reset());
         resetCameraState(lvl);
+        if (typeof initializeCameraZonesForPlayer === 'function') initializeCameraZonesForPlayer(lvl, this.player);
         this.pendingCameraSnap = false;
         if (!SFX.bgPlaying) SFX.startMusic();
         // Camera direkt auf Spieler setzen (cameraMinX = versteckt Bereich links)
@@ -559,7 +613,7 @@ const game = {
         const zoom = getLevelZoom(lvl);
         const visibleW = W / zoom;
         const visibleH = H / zoom;
-        const camMin = lvl.cameraMinX || 0;
+        const camMin = getCameraMinX(lvl);
         this.cameraX = Math.max(camMin, Math.min(this.player.x - visibleW * getCameraAnchor(lvl, 'x'), lvlW - visibleW));
         // Vertikale Kamera
         if (getCameraVerticalScroll(lvl)) {
@@ -569,7 +623,7 @@ const game = {
             this.cameraY = 0;
         }
         resetExitRevealState(lvl);
-        lvl.traps.forEach(t => t.reset());
+        if (typeof snapCameraToPlayerImmediate === 'function') snapCameraToPlayerImmediate(this, lvl, this.player);
     },
 
     resetLevel() {
@@ -577,24 +631,28 @@ const game = {
         this.levelData.traps.forEach(t => t.reset());
         this.state = 'playing';
         resetCameraState(this.levelData);
+        if (typeof initializeCameraZonesForPlayer === 'function') initializeCameraZonesForPlayer(this.levelData, this.player);
         this.pendingCameraSnap = false;
         // Kamera zurücksetzen bei Vertical Scroll / AutoScroll
         const lvl = this.levelData;
+        const lvlW = lvl.width || W;
+        const zoom = getLevelZoom(lvl);
+        const visibleW = W / zoom;
+        if (lvl.autoScroll || lvlW > visibleW) {
+            const camMin = getCameraMinX(lvl);
+            this.cameraX = Math.max(camMin, Math.min(this.player.startX - visibleW * getCameraAnchor(lvl, 'x'), lvlW - visibleW));
+        } else {
+            this.cameraX = 0;
+        }
         if (getCameraVerticalScroll(lvl)) {
             const lvlH = lvl.height || H;
-            const visibleH = H / getLevelZoom(lvl);
+            const visibleH = H / zoom;
             this.cameraY = Math.max(0, Math.min(this.player.startY - visibleH * getCameraAnchor(lvl, 'y'), lvlH - visibleH));
         } else {
             this.cameraY = 0;
         }
-        if (lvl.autoScroll) {
-            const lvlW = lvl.width || W;
-            const zoom = getLevelZoom(lvl);
-            const visibleW = W / zoom;
-            const camMin = lvl.cameraMinX || 0;
-            this.cameraX = Math.max(camMin, Math.min(this.player.startX - visibleW * getCameraAnchor(lvl, 'x'), lvlW - visibleW));
-        }
         resetExitRevealState(lvl);
+        if (typeof snapCameraToPlayerImmediate === 'function') snapCameraToPlayerImmediate(this, lvl, this.player);
     },
 
     lastDeathFrame: 0,
@@ -627,6 +685,7 @@ const game = {
         this.deaths = 0;
         this.sharedLevelMode = false;
         this.sharedLevelCode = '';
+        this.communityLevelIndex = -1;
         this.closeSharedLevelOverlay(false);
     },
 
@@ -644,6 +703,27 @@ const game = {
                 case 2: // LEAVE RACE
                     MP.disconnect();
                     this.goToMenu();
+                    break;
+            }
+        } else if (this.sharedLevelMode) {
+            switch (index) {
+                case 0: // RESUME
+                    this.state = 'playing';
+                    break;
+                case 1: // RESTART LEVEL
+                    this.resetLevel();
+                    this.state = 'playing';
+                    break;
+                case 2: // MAIN MENU (returns to community browser if the level came from there)
+                    if (typeof this.communityLevelIndex === 'number' && this.communityLevelIndex >= 0) {
+                        this.state = 'community';
+                        this.selectedCommunityLevel = this.communityLevelIndex;
+                        this.sharedLevelMode = false;
+                        this.sharedLevelCode = '';
+                        this.communityLevelIndex = -1;
+                    } else {
+                        this.goToMenu();
+                    }
                     break;
             }
         } else {
@@ -678,6 +758,7 @@ const game = {
 
     isExitVisible(exitObj) {
         if (!exitObj || !this.player) return false;
+        if (typeof isActionElementHidden === 'function' && isActionElementHidden(exitObj)) return false;
         const mode = getExitRevealMode(exitObj);
         if (exitObj.showAboveY && this.player.y >= exitObj.showAboveY) return false;
         if (exitObj.showBelowX && this.player.x >= exitObj.showBelowX) return false;
@@ -702,10 +783,10 @@ const game = {
 
     getAllPlatforms() {
         const lvl = this.levelData;
-        const plats = [...lvl.platforms];
+        const plats = [...lvl.platforms].filter(p => typeof isActionElementSolid === 'function' ? isActionElementSolid(p) : true);
         const platformTypes = ['fallingFloor', 'disappearing', 'hiddenPlatform', 'revealPlatform', 'trollShaker', 'triggerFloor', 'dodgingPlatform', 'timedFloor', 'togglePlatform', 'movingPlatform'];
         lvl.traps.forEach(t => {
-            if (t.solid && platformTypes.includes(t.type)) plats.push(t);
+            if (platformTypes.includes(t.type) && (typeof isActionElementSolid === 'function' ? isActionElementSolid(t) : t.solid)) plats.push(t);
         });
         return plats;
     },
@@ -731,8 +812,8 @@ const game = {
             return;
         }
 
-        // L = Level Select (nur im normalen Modus, nicht im Speedrun!)
-        if (keys['KeyL'] && this.state !== 'levelSelect' && !this.speedrunMode && !inLobby) {
+        // L = Level Select (nur im normalen Modus, nicht im Speedrun / Shared / Community!)
+        if (keys['KeyL'] && this.state !== 'levelSelect' && !this.speedrunMode && !inLobby && !this.sharedLevelMode && this.state !== 'community') {
             keys['KeyL'] = false;
             this.state = 'levelSelect';
             this.selectedLevel = this.currentLevel || 0;
@@ -755,6 +836,8 @@ const game = {
                 this.sharedLevelMode = false;
                 this.sharedLevelCode = '';
                 this.closeSharedLevelOverlay(false);
+            } else if (this.state === 'community') {
+                this.state = 'menu';
             }
         }
 
@@ -878,6 +961,29 @@ const game = {
             return;
         }
 
+        // ── COMMUNITY BROWSER (single-press navigation) ────
+        if (this.state === 'community') {
+            const count = (typeof COMMUNITY_LEVELS !== 'undefined') ? COMMUNITY_LEVELS.length : 0;
+            if (keys['ArrowDown'] || keys['KeyS']) {
+                keys['ArrowDown'] = false; keys['KeyS'] = false;
+                if (count > 0) this.selectedCommunityLevel = (this.selectedCommunityLevel + 1) % count;
+            }
+            if (keys['ArrowUp'] || keys['KeyW']) {
+                keys['ArrowUp'] = false; keys['KeyW'] = false;
+                if (count > 0) this.selectedCommunityLevel = (this.selectedCommunityLevel - 1 + count) % count;
+            }
+            if ((keys['Enter'] || keys['Space']) && count > 0) {
+                keys['Enter'] = false;
+                keys['Space'] = false;
+                this.startCommunityLevel(this.selectedCommunityLevel);
+            }
+            if (keys['Escape']) {
+                keys['Escape'] = false;
+                this.state = 'menu';
+            }
+            return;
+        }
+
         // ── PAUSED ──────────────────────────────────────────
         if (this.state === 'paused') {
             updatePauseMenu(this);
@@ -964,21 +1070,21 @@ const game = {
         // AutoScroll: Kamera bewegt sich automatisch
         const cameraRoom = getCurrentCameraRoom(this.levelData);
         if (cameraRoom) {
-            this.cameraX = cameraRoom.x;
-            this.cameraY = cameraRoom.y;
+            this.cameraX = this.pendingCameraSnap ? cameraRoom.x : lerp(this.cameraX, cameraRoom.x, getCameraLerp(this.levelData));
+            this.cameraY = this.pendingCameraSnap ? cameraRoom.y : lerp(this.cameraY, cameraRoom.y, getCameraLerp(this.levelData));
         } else if (this.levelData.autoScroll) {
             if (this.pendingCameraSnap) {
-                const camMin = this.levelData.cameraMinX || 0;
+                const camMin = getCameraMinX(this.levelData);
                 this.cameraX = Math.max(camMin, Math.min(this.player.x - visibleW * getCameraAnchor(this.levelData, 'x'), lvlW - visibleW));
             } else {
                 this.cameraX += this.levelData.autoScroll.speed;
                 if (this.cameraX > lvlW - visibleW) this.cameraX = lvlW - visibleW;
             }
         } else if (lvlW > visibleW) {
-            const camMin = this.levelData.cameraMinX || 0;
+            const camMin = getCameraMinX(this.levelData);
             const effectiveMin = Math.min(camMin, this.player.x - 20);
             const target = Math.max(effectiveMin, Math.min(this.player.x - visibleW * getCameraAnchor(this.levelData, 'x'), lvlW - visibleW));
-            this.cameraX = this.pendingCameraSnap ? target : lerp(this.cameraX, target, 0.08);
+            this.cameraX = this.pendingCameraSnap ? target : lerp(this.cameraX, target, getCameraLerp(this.levelData));
         } else {
             this.cameraX = 0;
         }
@@ -987,7 +1093,7 @@ const game = {
         if (!cameraRoom && getCameraVerticalScroll(this.levelData)) {
             const lvlH = this.levelData.height || H;
             const targetY = Math.max(0, Math.min(this.player.y - visibleH * getCameraAnchor(this.levelData, 'y'), lvlH - visibleH));
-            this.cameraY = this.pendingCameraSnap ? targetY : lerp(this.cameraY, targetY, 0.08);
+            this.cameraY = this.pendingCameraSnap ? targetY : lerp(this.cameraY, targetY, getCameraLerp(this.levelData));
         }
         if (this.pendingCameraSnap) {
             if (!getCameraVerticalScroll(this.levelData)) this.cameraY = 0;
@@ -996,6 +1102,8 @@ const game = {
 
         // Spike collision
         for (const s of this.levelData.spikes) {
+            if (typeof isActionElementHidden === 'function' && isActionElementHidden(s)) continue;
+            if (typeof isActionElementDisabled === 'function' && isActionElementDisabled(s)) continue;
             if (this.player.alive) {
                 const sHit = { x: s.x + 3, y: s.y + 3, w: s.w - 6, h: s.h - 6 };
                 if (aabb(this.player, sHit)) this.player.die();
@@ -1006,7 +1114,7 @@ const game = {
         if (this.player.alive) {
             const exits = [];
             const ex = typeof getActiveLevelExit === 'function' ? getActiveLevelExit(this.levelData) : this.levelData.exit;
-            if (ex && this.isExitVisible(ex)) exits.push(ex);
+            if (ex && this.isExitVisible(ex) && !(typeof isActionElementDisabled === 'function' && isActionElementDisabled(ex))) exits.push(ex);
             const movExit = this.levelData.traps.find(t => t.type === 'movingExit');
             // MovingExit nur erreichbar wenn er STEHT (nicht während Flucht)
             if (movExit && !movExit.moving) exits.push(movExit.getBounds());
@@ -1054,6 +1162,12 @@ const game = {
             return;
         }
 
+        if (this.state === 'community') {
+            drawCommunity(this.selectedCommunityLevel, this.frameCount);
+            ctx.restore();
+            return;
+        }
+
         if (this.state === 'win') {
             drawWinScreen(this.totalDeaths, this.winTimer, this.frameCount);
             ctx.restore();
@@ -1075,10 +1189,17 @@ const game = {
         }
         ctx.translate(-this.cameraX, -this.cameraY);
 
-        lvl.platforms.forEach(p => drawPlatform(p));
-        // Alle Traps AUSSER Darkness (wird zuletzt gezeichnet)
-        lvl.traps.forEach(t => { if (t.type !== 'darknessOverlay') t.draw(); });
-        lvl.spikes.forEach(s => drawSpike(s));
+        lvl.platforms.forEach(p => {
+            if (typeof isActionElementHidden === 'function' && isActionElementHidden(p)) return;
+            drawPlatform(p);
+        });
+        // Einige Fallen sollen Spikes bewusst verdecken, bis sie ausloesen.
+        getOrderedTrapDrawList(lvl.traps, false).forEach(t => t.draw());
+        lvl.spikes.forEach(s => {
+            if (typeof isActionElementHidden === 'function' && isActionElementHidden(s)) return;
+            drawSpike(s);
+        });
+        getOrderedTrapDrawList(lvl.traps, true).forEach(t => t.draw());
         const activeExit = typeof getActiveLevelExit === 'function' ? getActiveLevelExit(lvl) : lvl.exit;
         if (activeExit && this.isExitVisible(activeExit)) drawExit(activeExit);
         const passiveExit = activeExit === lvl.exit ? lvl.shadowExit : lvl.exit;
@@ -1232,20 +1353,14 @@ if (testLevel !== null) {
                     lvl.player.x = data.player.x;
                     lvl.player.y = data.player.y;
                     if (data.exit && lvl.exit) {
-                        lvl.exit.x = data.exit.x; lvl.exit.y = data.exit.y;
-                        lvl.exit.w = data.exit.w; lvl.exit.h = data.exit.h;
-                        lvl.exit.showAboveY = data.exit.showAboveY;
-                        lvl.exit.showBelowX = data.exit.showBelowX;
+                        Object.assign(lvl.exit, data.exit);
                         lvl.exit.revealArea = data.exit.revealArea ? { ...data.exit.revealArea } : undefined;
-                        lvl.exit.revealMode = data.exit.revealMode;
-                        lvl.exit.revealGroup = data.exit.revealGroup;
                         lvl.exit.revealed = false;
                     }
                     // Platforms
                     data.platforms.forEach((p, i) => {
                         if (lvl.platforms[i]) {
-                            lvl.platforms[i].x = p.x; lvl.platforms[i].y = p.y;
-                            lvl.platforms[i].w = p.w; lvl.platforms[i].h = p.h;
+                            Object.assign(lvl.platforms[i], p);
                         }
                     });
                     // Neue Platforms die im Editor hinzugefügt wurden
@@ -1257,9 +1372,7 @@ if (testLevel !== null) {
                     // Spikes
                     data.spikes.forEach((s, i) => {
                         if (lvl.spikes[i]) {
-                            lvl.spikes[i].x = s.x; lvl.spikes[i].y = s.y;
-                            lvl.spikes[i].w = s.w; lvl.spikes[i].h = s.h;
-                            lvl.spikes[i].dir = s.dir;
+                            Object.assign(lvl.spikes[i], s);
                         }
                     });
                     for (let i = lvl.spikes.length; i < data.spikes.length; i++) {

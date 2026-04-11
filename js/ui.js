@@ -169,9 +169,9 @@ function getMenuLabels() {
         { label: 'SPEEDRUN', value: srValue, valueColor: srColor },
         { label: 'MULTIPLAYER', valueColor: '#3498db' },
         { label: 'SHARED LEVEL' },
+        { label: 'COMMUNITY', value: (typeof COMMUNITY_LEVELS !== 'undefined' ? COMMUNITY_LEVELS.length : 0) + '', valueColor: '#f39c12' },
         { label: 'EDITOR' },
         { label: 'OPTIONS' },
-        { label: 'SOUND', value: SFX.muted ? 'OFF' : 'ON', valueColor: SFX.muted ? '#777' : '#2ecc71' },
     ];
 }
 
@@ -328,7 +328,7 @@ function drawMenu(frameCount, highestUnlocked) {
     ctx.fillText('\u2191\u2193 Navigate    Enter/Space Select', W / 2, H - 30);
     ctx.fillStyle = '#444';
     ctx.font = '10px "Courier New", monospace';
-    ctx.fillText('S Speed   G Multi   L Levels   P Shared   E Editor   O Options   M Sound', W / 2, H - 14);
+    ctx.fillText('S Speed   G Multi   L Levels   P Shared   E Editor   O Options', W / 2, H - 14);
 
     // Death counter badge
     if (game.totalDeaths > 0) {
@@ -450,6 +450,112 @@ function drawLevelSelect(selected, highestUnlocked, frameCount) {
     ctx.font = '12px "Courier New", monospace';
     const phaseHint = phases > 1 ? '     Q/E Phase' : '';
     ctx.fillText('\u2190\u2191\u2192\u2193 Navigate     Space Start     ESC Back' + phaseHint, W / 2, H - 20);
+    ctx.textAlign = 'left';
+}
+
+// ============================================================
+//  COMMUNITY BROWSER
+// ============================================================
+function drawCommunity(selected, frameCount) {
+    initMenuParticles();
+    updateMenuParticles();
+    drawMenuBackground(frameCount);
+
+    const levels = (typeof COMMUNITY_LEVELS !== 'undefined') ? COMMUNITY_LEVELS : [];
+
+    // Title
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 26px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('COMMUNITY', W / 2, 60);
+
+    ctx.font = '12px "Courier New", monospace';
+    ctx.fillStyle = '#f39c12';
+    ctx.fillText(levels.length + ' level' + (levels.length === 1 ? '' : 's') + ' available', W / 2, 82);
+
+    if (levels.length === 0) {
+        ctx.fillStyle = '#888';
+        ctx.font = '13px "Courier New", monospace';
+        ctx.fillText('No community levels yet.', W / 2, H / 2);
+        ctx.fillStyle = '#555';
+        ctx.font = '11px "Courier New", monospace';
+        ctx.fillText('ESC Back', W / 2, H - 20);
+        ctx.textAlign = 'left';
+        return;
+    }
+
+    // List area
+    const listTop = 120;
+    const rowH = 60;
+    const listW = 560;
+    const listX = (W - listW) / 2;
+
+    const maxVisible = 5;
+    const clampedSel = Math.max(0, Math.min(levels.length - 1, selected));
+    let scrollStart = Math.max(0, clampedSel - Math.floor(maxVisible / 2));
+    scrollStart = Math.min(scrollStart, Math.max(0, levels.length - maxVisible));
+
+    const visibleCount = Math.min(maxVisible, levels.length - scrollStart);
+
+    for (let i = 0; i < visibleCount; i++) {
+        const idx = scrollStart + i;
+        const lvl = levels[idx];
+        const y = listTop + i * rowH;
+        const isSel = idx === clampedSel;
+
+        // Card background
+        ctx.fillStyle = isSel ? 'rgba(243, 156, 18, 0.14)' : 'rgba(255, 255, 255, 0.03)';
+        ctx.fillRect(listX, y, listW, rowH - 8);
+
+        // Border
+        ctx.strokeStyle = isSel ? '#f39c12' : 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = isSel ? 2 : 1;
+        ctx.strokeRect(listX, y, listW, rowH - 8);
+
+        // Selector arrow
+        if (isSel) {
+            const bounce = Math.sin(frameCount * 0.12) * 2.5;
+            ctx.fillStyle = '#f39c12';
+            ctx.font = 'bold 16px "Courier New", monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText('\u25B8', listX - 6 + bounce, y + 32);
+        }
+
+        // Name
+        ctx.textAlign = 'left';
+        ctx.fillStyle = isSel ? '#fff' : '#bbb';
+        ctx.font = (isSel ? 'bold ' : '') + '16px "Courier New", monospace';
+        ctx.fillText(lvl.name || 'Untitled', listX + 14, y + 26);
+
+        // Author + difficulty
+        ctx.fillStyle = '#f39c12';
+        ctx.font = '11px "Courier New", monospace';
+        const author = lvl.author ? 'by ' + lvl.author : '';
+        const diff = lvl.difficulty ? ('   [' + lvl.difficulty + ']') : '';
+        ctx.fillText(author + diff, listX + 14, y + 44);
+
+        // Play hint (right side when selected)
+        if (isSel) {
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#2ecc71';
+            ctx.font = 'bold 11px "Courier New", monospace';
+            ctx.fillText('\u25B6 PLAY', listX + listW - 14, y + 26);
+        }
+    }
+
+    // Scroll indicator
+    if (levels.length > maxVisible) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#555';
+        ctx.font = '10px "Courier New", monospace';
+        ctx.fillText((clampedSel + 1) + ' / ' + levels.length, W / 2, listTop + maxVisible * rowH + 6);
+    }
+
+    // Bottom hints
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#777';
+    ctx.font = '12px "Courier New", monospace';
+    ctx.fillText('\u2191\u2193 Navigate     Enter/Space Play     ESC Back', W / 2, H - 20);
     ctx.textAlign = 'left';
 }
 
@@ -611,6 +717,9 @@ let pauseNavCooldown = 0;
 function getPauseItems() {
     const inMP = typeof MP !== 'undefined' && MP.state === 'racing';
     if (inMP) return ['RESUME', 'RESTART LEVEL', 'LEAVE RACE'];
+    if (typeof game !== 'undefined' && game.sharedLevelMode) {
+        return ['RESUME', 'RESTART LEVEL', 'MAIN MENU'];
+    }
     return ['RESUME', 'RESTART LEVEL', 'LEVEL SELECT', 'MAIN MENU'];
 }
 
@@ -832,6 +941,7 @@ function drawSettings(frameCount) {
         { label: 'Music Volume', value: SETTINGS.musicVol + '%', type: 'slider' },
         { label: 'Effects Volume', value: SETTINGS.sfxVol + '%', type: 'slider' },
         { label: 'Troll Messages', value: SETTINGS.trollMessages ? 'ON' : 'OFF', type: 'toggle' },
+        { label: 'Sound', value: SFX.muted ? 'OFF' : 'ON', type: 'toggleSound' },
         { label: 'Reset All Data', value: '', type: 'action' },
     ];
 
@@ -882,6 +992,10 @@ function drawSettings(frameCount) {
             ctx.fillStyle = sel ? (SETTINGS.trollMessages ? '#2ecc71' : '#e74c3c') : '#888';
             ctx.font = '15px "Courier New", monospace';
             ctx.fillText(item.value, W / 2 + 260, y + 24);
+        } else if (item.type === 'toggleSound') {
+            ctx.fillStyle = sel ? (SFX.muted ? '#e74c3c' : '#2ecc71') : '#888';
+            ctx.font = '15px "Courier New", monospace';
+            ctx.fillText(item.value, W / 2 + 260, y + 24);
         } else if (item.type === 'action' && settingsResetConfirm && sel) {
             ctx.fillStyle = '#e74c3c';
             ctx.font = 'bold 13px "Courier New", monospace';
@@ -923,7 +1037,7 @@ function updateSettings() {
     }
     if ((keys['ArrowDown'] || keys['KeyS']) && settingsNavCooldown <= 0) {
         keys['ArrowDown'] = false; keys['KeyS'] = false;
-        settingsIndex = Math.min(6, settingsIndex + 1);
+        settingsIndex = Math.min(7, settingsIndex + 1);
         settingsResetConfirm = false;
         settingsNavCooldown = 8;
     }
@@ -980,8 +1094,14 @@ function updateSettings() {
         SETTINGS.save();
     }
 
-    // Reset All Data (Index 6)
+    // Sound Toggle (Index 6)
     if (settingsIndex === 6 && keys['Enter']) {
+        keys['Enter'] = false;
+        SFX.setMuted(!SFX.muted);
+    }
+
+    // Reset All Data (Index 7)
+    if (settingsIndex === 7 && keys['Enter']) {
         keys['Enter'] = false;
         if (settingsResetConfirm) {
             localStorage.removeItem('ohcomeon_progress');

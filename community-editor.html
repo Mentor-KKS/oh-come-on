@@ -931,7 +931,7 @@
     }
 
     const DOOR_SKIN_OPTIONS = ['exit', 'warp', 'shadow', 'gold'];
-    const PLATFORM_SKIN_OPTIONS = ['default', 'moving', 'toggle', 'stone', 'metal', 'ghost'];
+    const PLATFORM_SKIN_OPTIONS = ['default', 'ceiling', 'moving', 'toggle', 'stone', 'metal', 'ghost'];
     const ONE_WAY_SKIN_OPTIONS = ['oneWay', ...PLATFORM_SKIN_OPTIONS];
 
     function getDoorSkinPreviewColors(skin) {
@@ -982,6 +982,7 @@
         if (platformLike?.oneWay) {
             switch (platformLike?.skin) {
                 case 'default': return { glow:null, body:'#d0d0d0', top:'#e8e8e8' };
+                case 'ceiling': return { glow:null, body:'#d0d0d0' };
                 case 'moving': return { glow:null, body:'#b0d0f0', top:'#d0e8ff', detail:'dashes', detailColor:'rgba(255,255,255,0.5)' };
                 case 'toggle': return { glow:null, body:'#7f8c8d', top:'#bdc3c7', detail:'bolts', detailColor:'#dfe6e9' };
                 case 'stone': return { glow:null, body:'#8f9188', top:'#bbbdb3', border:'#6f7269', detail:'cracks', detailColor:'#66695f' };
@@ -996,6 +997,7 @@
         if (material === 'mud') return { glow:null, body:'#7a5233', top:'#9c724b', detail:'ripples', detailColor:'rgba(50,30,15,0.45)' };
         if (material === 'lava') return { glow:null, body:'#cf3b19', top:'#ffae42', detail:'bubbles', detailColor:'rgba(255,220,120,0.75)' };
         switch (platformLike?.skin) {
+            case 'ceiling': return { glow:null, body:'#d0d0d0' };
             case 'moving': return { glow:null, body:'#b0d0f0', top:'#d0e8ff', detail:'dashes', detailColor:'rgba(255,255,255,0.5)' };
             case 'toggle': return { glow:null, body:'#7f8c8d', top:'#bdc3c7', detail:'bolts', detailColor:'#dfe6e9' };
             case 'stone': return { glow:null, body:'#8f9188', top:'#bbbdb3', border:'#6f7269', detail:'cracks', detailColor:'#66695f' };
@@ -1013,8 +1015,10 @@
         }
         cx.fillStyle = colors.body;
         cx.fillRect(x, y, w, h);
-        cx.fillStyle = colors.top;
-        cx.fillRect(x, y, w, Math.min(3, h));
+        if (colors.top) {
+            cx.fillStyle = colors.top;
+            cx.fillRect(x, y, w, Math.min(3, h));
+        }
         if (colors.bottom) {
             cx.fillStyle = colors.bottom;
             cx.fillRect(x, y + Math.max(0, h - 3), w, Math.min(3, h));
@@ -2240,7 +2244,7 @@
     function cloneTrap(t, ox, oy) {
         const x = (t.x||0)+ox, y = (t.y||0)+oy;
         switch(t.type) {
-            case 'fallingFloor': return new FallingFloor(x,y,t.w,t.h);
+            case 'fallingFloor': return new FallingFloor(x,y,t.w,t.h,t.triggerDelay ?? 75);
             case 'fakeFloor': return new FakeFloor(x,y,t.w,t.h);
             case 'dodgingPlatform': return new DodgingPlatform(x,y,t.w,t.h,t.dodgeX||x+100,t.triggerRange||80);
             case 'trollShaker': return new TrollShaker(x,y,t.w,t.h);
@@ -2745,7 +2749,7 @@
 
             // Platforms
             if (t === 'fallingFloor') {
-                // Keine extra Settings (triggert bei Kontakt)
+                tp.push({ key:'triggerDelay', label:'Trigger Delay', val: r.triggerDelay ?? 75 });
             }
             if (t === 'fakeFloor') {
                 // Keine extra Settings (ist einfach nicht solid)
@@ -3121,6 +3125,7 @@
             selected.ref.revealGroup = String(val || '').trim() || 'A';
             selected.ref.revealed = false;
         }
+        else if (key === 'triggerDelay') selected.ref.triggerDelay = Math.max(0, +val || 0);
         else if (key === 'triggerMode') {
             selected.ref.triggerMode = val;
             if (val === 'x' && selected.ref.triggerX === undefined) selected.ref.triggerX = selected.ref.x - 40;
@@ -3322,6 +3327,7 @@
         if (t.fitMode !== undefined) d.fitMode = t.fitMode;
         if (t.entryPadding !== undefined) d.entryPadding = t.entryPadding;
         if (t.delay !== undefined) d.delay = t.delay;
+        if (t.triggerDelay !== undefined) d.triggerDelay = t.triggerDelay;
         if (t.fadeDelay !== undefined) d.fadeDelay = t.fadeDelay;
         if (t.triggerX !== undefined) d.triggerX = t.triggerX;
         if (t.triggerY !== undefined) d.triggerY = t.triggerY;
@@ -3661,7 +3667,7 @@
 
     function generateTrapCode(t) {
         switch (t.type) {
-            case 'fallingFloor': return `new FallingFloor(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
+            case 'fallingFloor': return `new FallingFloor(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.triggerDelay ?? 75})`;
             case 'fakeFloor': return `new FakeFloor(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
             case 'dodgingPlatform': return `new DodgingPlatform(${t.x}, ${t.y}, ${t.w}, ${t.h}, ${t.dodgeX ?? (t.x + 100)}, ${t.triggerRange ?? 80})`;
             case 'trollShaker': return `new TrollShaker(${t.x}, ${t.y}, ${t.w}, ${t.h})`;
@@ -4812,8 +4818,9 @@
         }
         ctx.translate(-game.cameraX, -game.cameraY);
         lvl.platforms.forEach(p=>drawPlatform(p));
-        lvl.traps.forEach(t=>{if(t.type!=='darknessOverlay')t.draw();});
+        getOrderedTrapDrawList(lvl.traps, false).forEach(t=>t.draw());
         lvl.spikes.forEach(s=>drawSpike(s));
+        getOrderedTrapDrawList(lvl.traps, true).forEach(t=>t.draw());
         const activeExit = typeof getActiveLevelExit === 'function' ? getActiveLevelExit(lvl) : lvl.exit;
         if(activeExit && isExitVisibleForPlayer(activeExit, testPlayer)) drawExit(activeExit);
         const passiveExit = activeExit === lvl.exit ? lvl.shadowExit : lvl.exit;
