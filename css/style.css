@@ -12,6 +12,8 @@ body {
     height: 100vh;
     overflow: hidden;
     font-family: 'Courier New', monospace;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 #gameCanvas {
@@ -19,6 +21,20 @@ body {
     border-radius: 4px;
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
     image-rendering: auto;
+}
+
+/* Mobile: fill the full viewport, no letterbox / black borders */
+body.is-mobile {
+    background: #000;
+}
+body.is-mobile #gameCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 /* ── Shared Level Overlay ──────────────────────────────── */
@@ -119,14 +135,13 @@ body {
     font-size: 12px;
 }
 
-/* ── Mobile Touch Controls ─────────────────────────────── */
+/* ── Mobile Touch Controls (overlay, no reserved height) ─── */
 #touchControls {
     display: none;
     position: fixed;
-    bottom: 0;
+    bottom: 14px;
     left: 0;
     right: 0;
-    height: 140px;
     z-index: 15;
     pointer-events: none;
     user-select: none;
@@ -137,21 +152,21 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    padding: 0 16px 20px;
+    padding: 0 18px;
 }
 
 .touch-btn {
     pointer-events: auto;
-    width: 70px;
-    height: 70px;
+    width: 64px;
+    height: 64px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-    border: 2px solid rgba(255, 255, 255, 0.15);
+    background: rgba(20, 22, 32, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.22);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
-    color: rgba(255, 255, 255, 0.5);
+    font-size: 26px;
+    color: rgba(255, 255, 255, 0.75);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     transition: background 0.1s, border-color 0.1s;
