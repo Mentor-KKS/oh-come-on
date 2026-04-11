@@ -1096,7 +1096,7 @@ const game = {
             this.cameraY = this.pendingCameraSnap ? targetY : lerp(this.cameraY, targetY, getCameraLerp(this.levelData));
         }
         if (this.pendingCameraSnap) {
-            if (!getCameraVerticalScroll(this.levelData)) this.cameraY = 0;
+            if (!cameraRoom && !getCameraVerticalScroll(this.levelData)) this.cameraY = 0;
             this.pendingCameraSnap = false;
         }
 

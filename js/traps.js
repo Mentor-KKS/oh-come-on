@@ -1564,6 +1564,12 @@ class CameraRoom {
         if (!overlaps) return;
         if (!isSameCameraRoomState(room, roomState)) {
             applyCameraRoomState(game.levelData, this, player);
+            game.pendingCameraSnap = true;
+            // Force an immediate camera snap to the new room — don't rely on
+            // the game loop picking up pendingCameraSnap later this tick.
+            if (game && typeof snapCameraToPlayerImmediate === 'function') {
+                snapCameraToPlayerImmediate(game, game.levelData, player);
+            }
         }
     }
     draw() {}
