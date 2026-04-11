@@ -1,0 +1,203 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #0a0a0f;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+}
+
+#gameCanvas {
+    background: #1a1a2e;
+    border-radius: 4px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    image-rendering: auto;
+}
+
+/* ── Shared Level Overlay ──────────────────────────────── */
+#sharedLevelOverlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 6, 10, 0.86);
+    backdrop-filter: blur(4px);
+    z-index: 20;
+}
+
+#sharedLevelOverlay.open {
+    display: flex;
+}
+
+.shared-level-card {
+    width: min(640px, 92vw);
+    padding: 24px;
+    background: linear-gradient(180deg, #171926 0%, #11131d 100%);
+    border: 1px solid #31374c;
+    border-radius: 10px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+    color: #fff;
+}
+
+.shared-level-card h2 {
+    margin-bottom: 8px;
+    font-size: 26px;
+    color: #f1f1f1;
+}
+
+.shared-level-card p {
+    margin-bottom: 14px;
+    color: #8f95ab;
+    line-height: 1.45;
+    font-size: 14px;
+}
+
+#sharedLevelCodeInput {
+    width: 100%;
+    min-height: 190px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid #3a4157;
+    border-radius: 8px;
+    outline: none;
+    background: #0c0e16;
+    color: #eef2ff;
+    font: 13px/1.45 "Courier New", monospace;
+}
+
+#sharedLevelCodeInput:focus {
+    border-color: #2ecc71;
+    box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.14);
+}
+
+.shared-level-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+.shared-level-actions button {
+    padding: 10px 14px;
+    border: 1px solid #3a4157;
+    border-radius: 8px;
+    background: #181c2b;
+    color: #fff;
+    cursor: pointer;
+    font: 14px "Courier New", monospace;
+}
+
+.shared-level-actions button.primary {
+    background: #2ecc71;
+    border-color: #25aa5f;
+    color: #08110c;
+    font-weight: bold;
+}
+
+.shared-level-actions button:hover {
+    filter: brightness(1.08);
+}
+
+#sharedLevelOverlayError {
+    min-height: 18px;
+    margin-top: 12px;
+    color: #ff8f8f;
+    font-size: 13px;
+}
+
+.shared-level-help {
+    margin-top: 10px;
+    color: #6e748b;
+    font-size: 12px;
+}
+
+/* ── Mobile Touch Controls ─────────────────────────────── */
+#touchControls {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 140px;
+    z-index: 15;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#touchControls.active {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 16px 20px;
+}
+
+.touch-btn {
+    pointer-events: auto;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.touch-btn:active, .touch-btn.pressed {
+    background: rgba(46, 204, 113, 0.25);
+    border-color: rgba(46, 204, 113, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.touch-group {
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+}
+
+#landscapeHint {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0a0a0f;
+    color: #ccc;
+    font-family: 'Courier New', monospace;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 16px;
+}
+
+#landscapeHint .icon {
+    font-size: 48px;
+}
+
+#landscapeHint .msg {
+    font-size: 16px;
+    color: #2ecc71;
+}
+
+@media (orientation: portrait) and (max-width: 768px) {
+    #landscapeHint {
+        display: flex;
+    }
+    #gameCanvas, #touchControls {
+        display: none !important;
+    }
+}
